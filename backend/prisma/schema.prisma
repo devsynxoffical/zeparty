@@ -102,6 +102,9 @@ enum WalletLedgerType {
   SETTLEMENT_PAYOUT
   COMMISSION_PAYOUT
   SETTLEMENT_ADJUSTMENT
+  TRANSFER_OUT
+  TRANSFER_IN
+  USD_EXCHANGE
 }
 
 enum SettlementEntityType {
@@ -911,6 +914,7 @@ model Wallet {
   escrowLockedCoins  BigInt   @default(0)
   totalRechargedUSD  Decimal  @default(0.00) @db.Decimal(14, 2)
   totalWithdrawnUSD  Decimal  @default(0.00) @db.Decimal(14, 2)
+  usdBalance         Decimal  @default(0.00) @db.Decimal(14, 2)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 

@@ -180,6 +180,23 @@ export async function verifyMerchantRecharge(req, res, next) {
       });
     }
 
+    if (user.status === 'DELETED' || user.status === 'BANNED') {
+      return res.status(400).json({
+        success: false,
+        message: `Account is inactive or suspended.`,
+        error: { code: 'USER_INACTIVE' },
+      });
+    }
+
+    const isSellerTarget = String(type || '').toUpperCase().includes('SELLER');
+    if (isSellerTarget && user.userType !== 'SELLER') {
+      return res.status(400).json({
+        success: false,
+        message: `User '${user.username}' (${user.id}) is not an authorized Coin Seller account.`,
+        error: { code: 'NOT_A_COIN_SELLER' },
+      });
+    }
+
     const nickname = (user.profile?.displayName && user.profile.displayName.trim())
       ? user.profile.displayName.trim()
       : user.username;
@@ -287,7 +304,8 @@ export async function executeMerchantRecharge(req, res, next) {
       });
     }
 
-    const { recipientId, amountCoins, amount, coins, notes } = req.body;
+    const { recipientId, amountCoins, amount, coins, notes, idempotencyKey } = req.body;
+    const headerIdempotencyKey = req.headers['idempotency-key'] || req.headers['x-idempotency-key'];
     const ipAddress = req.ip || req.headers['x-forwarded-for'];
 
     const result = await merchantService.executeMerchantRecharge(
@@ -296,6 +314,7 @@ export async function executeMerchantRecharge(req, res, next) {
         recipientId,
         amountCoins: amountCoins || amount || coins,
         notes,
+        idempotencyKey: idempotencyKey || headerIdempotencyKey,
       },
       { ipAddress }
     );
@@ -306,7 +325,84 @@ export async function executeMerchantRecharge(req, res, next) {
       data: result,
     });
   } catch (err) {
+    console.error('Merchant recharge execution error:', err);
+    if (err.statusCode && err.statusCode < 500) {
+      return res.status(err.statusCode).json({
+        success: false,
+        message: err.message,
+        error: { code: err.code || 'RECHARGE_ERROR' },
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: 'Recharge failed due to a server error. Balances were not deducted. Please try again.',
+      error: { code: 'RECHARGE_FAILED' },
+    });
+  }
+}
+
+export async function getMerchantUsdBalance(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+        error: { code: 'UNAUTHORIZED' },
+      });
+    }
+
+    const data = await merchantService.getMerchantUsdBalance(userId);
+    return res.status(200).json({
+      success: true,
+      data,
+    });
+  } catch (err) {
     next(err);
+  }
+}
+
+export async function exchangeUsdToCoins(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+        error: { code: 'UNAUTHORIZED' },
+      });
+    }
+
+    const { usdAmount, amount, ratePerDollar } = req.body;
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+
+    const result = await merchantService.exchangeUsdToCoins(
+      userId,
+      {
+        usdAmount: usdAmount || amount,
+        ratePerDollar: ratePerDollar || 7000,
+      },
+      { ipAddress }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: 'USD exchanged to Coins successfully',
+      data: result,
+    });
+  } catch (err) {
+    if (err.statusCode && err.statusCode < 500) {
+      return res.status(err.statusCode).json({
+        success: false,
+        message: err.message,
+        error: { code: err.code || 'EXCHANGE_ERROR' },
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: 'Exchange failed. USD balance was not deducted.',
+      error: { code: 'EXCHANGE_FAILED' },
+    });
   }
 }
 
@@ -322,4 +418,6 @@ export default {
   getMerchantDashboard,
   getMerchantLedger,
   executeMerchantRecharge,
+  getMerchantUsdBalance,
+  exchangeUsdToCoins,
 };

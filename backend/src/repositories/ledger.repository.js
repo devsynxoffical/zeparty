@@ -17,6 +17,9 @@ export function normalizeLedgerType(type) {
     'SETTLEMENT_PAYOUT',
     'COMMISSION_PAYOUT',
     'SETTLEMENT_ADJUSTMENT',
+    'TRANSFER_OUT',
+    'TRANSFER_IN',
+    'USD_EXCHANGE',
   ];
   if (valid.includes(upper)) return upper;
   if (upper.includes('PURCHASE') || upper.includes('STORE')) return 'SWAP';

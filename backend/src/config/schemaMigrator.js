@@ -70,6 +70,32 @@ export async function ensureDatabaseSchema(db = prisma) {
     } catch {}
   }
 
+  // 2b. Ensure WalletLedgerType enum values
+  const ledgerTypes = ['TRANSFER_OUT', 'TRANSFER_IN', 'USD_EXCHANGE'];
+  for (const lt of ledgerTypes) {
+    try {
+      await db.$executeRawUnsafe(`ALTER TYPE "WalletLedgerType" ADD VALUE IF NOT EXISTS '${lt}';`);
+    } catch {
+      try {
+        const rows = await db.$queryRawUnsafe(`
+          SELECT 1 FROM pg_type t 
+          JOIN pg_enum e ON t.oid = e.enumtypid 
+          WHERE t.typname = 'WalletLedgerType' AND e.enumlabel = '${lt}';
+        `);
+        if (!rows || rows.length === 0) {
+          await db.$executeRawUnsafe(`ALTER TYPE "WalletLedgerType" ADD VALUE '${lt}';`);
+        }
+      } catch {}
+    }
+  }
+
+  // 2c. Ensure Wallet columns
+  try {
+    await db.$executeRawUnsafe(`ALTER TABLE "Wallet" ADD COLUMN IF NOT EXISTS "usdBalance" DECIMAL(14, 2) NOT NULL DEFAULT 0.00;`);
+  } catch (err) {
+    console.warn('Wallet DDL note:', err.message);
+  }
+
   // 3. Ensure PKEvent columns
   const pkEventColumns = [
     `ALTER TABLE "PKEvent" ADD COLUMN IF NOT EXISTS "initiatorUserId" TEXT;`,

@@ -77,7 +77,7 @@ class MerchantProvider extends ChangeNotifier {
     required String recipientId,
     required String recipientName,
     required int coinAmount,
-    required String pin,
+    String pin = '',
   }) async {
     if (coinAmount <= 0) return 'Invalid coin amount.';
     if (_merchant.availableCoins > 0 && _merchant.availableCoins < coinAmount) {
@@ -151,15 +151,14 @@ class MerchantProvider extends ChangeNotifier {
         return response.data?['message']?.toString() ?? 'Failed to execute recharge';
       }
     } catch (e) {
-      final err = e.toString();
-      _errorMessage = err;
-      return err.contains('403')
-          ? 'Unauthorized or inactive merchant.'
-          : err.contains('404')
-              ? 'Recipient not found.'
-              : err.contains('400')
-                  ? 'Insufficient balance or invalid amount.'
-                  : 'Recharge failed: $err';
+      String cleanMessage = 'Failed to execute recharge. Please try again.';
+      if (e is ApiException) {
+        cleanMessage = e.message;
+      } else {
+        cleanMessage = e.toString();
+      }
+      _errorMessage = cleanMessage;
+      return cleanMessage;
     } finally {
       _isLoading = false;
       notifyListeners();

@@ -18,12 +18,14 @@ class LiveHostProvider extends ChangeNotifier {
   bool _isLoadingTarget = false;
   String? _targetError;
   String? _profileError;
+  bool _isNotRegistered = false;
   Timer? _heartbeatTimer;
   String? _currentBroadcastRoomId;
 
   String? get currentBroadcastRoomId => _currentBroadcastRoomId;
   bool get isHeartbeatActive => _heartbeatTimer != null;
   String? get profileError => _profileError;
+  bool get isNotRegistered => _isNotRegistered;
 
   StreamSubscription? _hostTargetSubscription;
   StreamSubscription? _reconnectSubscription;
@@ -201,16 +203,33 @@ class LiveHostProvider extends ChangeNotifier {
                       ) ??
                       0.0),
           );
+          _isNotRegistered = false;
           _profileError = null;
         } else {
+          _isNotRegistered = false;
           _profileError = 'Host profile is not currently active';
         }
       } else {
         _profileError = 'Failed to retrieve host profile';
       }
     } catch (e) {
-      _profileError = e.toString();
-      debugPrint('[LiveHostProvider] fetchHostProfile error: $e');
+      final errStr = e.toString().toUpperCase();
+      final is404 = (e is ApiException && e.statusCode == 404) ||
+          errStr.contains('HOST_NOT_FOUND') ||
+          errStr.contains('404') ||
+          errStr.contains('NOT FOUND');
+
+      if (is404) {
+        _isNotRegistered = true;
+        _activeLiveHost = null;
+        _profileError = null;
+        debugPrint('[LiveHostProvider] User $userId is not a registered host (404). Fetching host application & eligibility...');
+        await fetchHostApplication(userId);
+        await fetchEligibility();
+      } else {
+        _profileError = e.toString();
+        debugPrint('[LiveHostProvider] fetchHostProfile error: $e');
+      }
     } finally {
       _isLoading = false;
       notifyListeners();

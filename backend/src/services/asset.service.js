@@ -149,7 +149,7 @@ const roleFiles = {
   super_admin: { tag: 'roles/super_admin_tag.webp', badge: 'roles/ZP-179_admin_badge.webp', frame: 'roles/super_admin_frame.webp' },
   top_fan: { tag: 'roles/official_tag.webp', badge: 'roles/top_fan_badge.webp', frame: 'roles/top_fan_frame.webp' },
   vip: { tag: 'roles/official_tag.webp', badge: 'roles/ZP-216_official_badge.webp', frame: 'roles/official_frame.webp' },
-  svip: { tag: 'svip/svip1_tag.png', badge: 'svip/ZP-054_svip-1_badge.webp', frame: 'svip/svip1_frame.webp' },
+  svip: { tag: 'svip/svip1_tag.png', badge: 'svip/ZP-054_svip-1_badge.webp', frame: 'svip/svip6_frame.webp' },
   dragon: { tag: 'nobles/emperor_badge.webp', badge: 'nobles/emperor_badge.webp', frame: 'nobles/emperor_frame.webp' },
   elite: { tag: 'nobles/king_badge.webp', badge: 'nobles/king_badge.webp', frame: 'nobles/king_frame.webp' },
   guardian: { tag: 'nobles/duke_badge.webp', badge: 'nobles/duke_badge.webp', frame: 'nobles/duke_frame.webp' },
@@ -505,11 +505,6 @@ export const ALL_AVAILABLE_FRAMES = [
   { key: 'svip8', name: 'SVIP 8 Celestial Frame', asset: 'assets/svip/svip8_frame.webp' },
   { key: 'svip7', name: 'SVIP 7 Aurora Frame', asset: 'assets/svip/svip7_frame.webp' },
   { key: 'svip6', name: 'SVIP 6 Obsidian Frame', asset: 'assets/svip/svip6_frame.webp' },
-  { key: 'svip5', name: 'SVIP 5 Diamond Frame', asset: 'assets/svip/svip5_frame.webp' },
-  { key: 'svip4', name: 'SVIP 4 Platinum Frame', asset: 'assets/svip/svip4_frame.webp' },
-  { key: 'svip3', name: 'SVIP 3 Gold Frame', asset: 'assets/svip/svip3_frame.webp' },
-  { key: 'svip2', name: 'SVIP 2 Silver Frame', asset: 'assets/svip/svip2_frame.webp' },
-  { key: 'svip1', name: 'SVIP 1 Bronze Frame', asset: 'assets/svip/svip1_frame.webp' },
   { key: 'mystery', name: 'Mystery Astral Frame', asset: 'assets/animations/mystery_frame.webp' },
 ];
 
@@ -538,10 +533,10 @@ export async function getUserBackpack(userId, db = prisma) {
 
     const svipLvl = Number(user.profile?.svipLevel || 0);
 
-    // Add eligible role/noble/SVIP frames if user qualifies
+    // Add eligible role/noble/SVIP frames if user qualifies (SVIP frames require SVIP 6+)
     for (const f of ALL_AVAILABLE_FRAMES) {
       const isRoleQualified = (defaultFrameKey === f.key);
-      const isSvipQualified = svipLvl > 0 && (
+      const isSvipQualified = svipLvl >= 6 && (
         f.key === `svip${svipLvl}` ||
         (f.key.startsWith('svip') && Number(f.key.replace('svip', '')) <= svipLvl)
       );

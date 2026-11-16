@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../core/services/api_client.dart';
 import '../../core/theme/app_colors.dart';
 import '../../providers/merchant_provider.dart';
 import '../../providers/usd_balance_provider.dart';
@@ -13,12 +15,14 @@ class MerchantCenterScreen extends StatefulWidget {
 
 class _MerchantCenterScreenState extends State<MerchantCenterScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  final TextEditingController _recipientIdController = TextEditingController(text: 'user_1002');
-  final TextEditingController _recipientNameController = TextEditingController(text: 'Sophia Rose');
-  final TextEditingController _coinsController = TextEditingController(text: '500000');
-  final TextEditingController _pinController = TextEditingController(text: '1234');
+  final TextEditingController _recipientIdController = TextEditingController();
+  final TextEditingController _coinsController = TextEditingController();
 
   String _selectedRecipientType = 'User Recharge'; // 'User Recharge' or 'Coin Seller Recharge'
+  Timer? _lookupDebounce;
+  bool _isLookingUp = false;
+  Map<String, dynamic>? _verifiedRecipient;
+  String? _lookupError;
 
   @override
   void initState() {
@@ -28,18 +32,78 @@ class _MerchantCenterScreenState extends State<MerchantCenterScreen> with Single
       if (mounted) {
         context.read<MerchantProvider>().fetchMyMerchantCenter();
         context.read<MerchantProvider>().fetchTransactions();
+        context.read<UsdBalanceProvider>().fetchMerchantUsdBalance();
       }
     });
   }
 
   @override
   void dispose() {
+    _lookupDebounce?.cancel();
     _tabController.dispose();
     _recipientIdController.dispose();
-    _recipientNameController.dispose();
     _coinsController.dispose();
-    _pinController.dispose();
     super.dispose();
+  }
+
+  void _onRecipientIdChanged(String value) {
+    _lookupDebounce?.cancel();
+    final clean = value.trim();
+    if (clean.isEmpty) {
+      setState(() {
+        _isLookingUp = false;
+        _verifiedRecipient = null;
+        _lookupError = null;
+      });
+      return;
+    }
+
+    setState(() {
+      _isLookingUp = true;
+      _verifiedRecipient = null;
+      _lookupError = null;
+    });
+
+    _lookupDebounce = Timer(const Duration(milliseconds: 400), () async {
+      await _verifyRecipient(clean);
+    });
+  }
+
+  Future<void> _verifyRecipient(String id) async {
+    try {
+      final res = await ApiClient.instance.get(
+        '/v1/merchants/recharge/verify',
+        queryParameters: {
+          'type': _selectedRecipientType == 'User Recharge' ? 'USER' : 'SELLER',
+          'id': id,
+        },
+      );
+      if (!mounted) return;
+      if (res.data?['success'] == true && res.data['data'] != null) {
+        setState(() {
+          _isLookingUp = false;
+          _verifiedRecipient = res.data['data'] as Map<String, dynamic>;
+          _lookupError = null;
+        });
+      } else {
+        setState(() {
+          _isLookingUp = false;
+          _verifiedRecipient = null;
+          _lookupError = res.data?['message']?.toString() ?? 'Account not found';
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      String err = 'Account not found or ineligible';
+      if (e is ApiException) {
+        err = e.message;
+      }
+      setState(() {
+        _isLookingUp = false;
+        _verifiedRecipient = null;
+        _lookupError = err;
+      });
+    }
   }
 
   @override
@@ -156,8 +220,10 @@ class _MerchantCenterScreenState extends State<MerchantCenterScreen> with Single
                     if (sel) {
                       setState(() {
                         _selectedRecipientType = 'User Recharge';
-                        _recipientIdController.text = 'user_1002';
-                        _recipientNameController.text = 'Sophia Rose';
+                        _recipientIdController.clear();
+                        _verifiedRecipient = null;
+                        _lookupError = null;
+                        _isLookingUp = false;
                       });
                     }
                   },
@@ -183,8 +249,10 @@ class _MerchantCenterScreenState extends State<MerchantCenterScreen> with Single
                     if (sel) {
                       setState(() {
                         _selectedRecipientType = 'Coin Seller Recharge';
-                        _recipientIdController.text = 'seller_8801';
-                        _recipientNameController.text = 'Danial Coin Agency';
+                        _recipientIdController.clear();
+                        _verifiedRecipient = null;
+                        _lookupError = null;
+                        _isLookingUp = false;
                       });
                     }
                   },
@@ -200,35 +268,83 @@ class _MerchantCenterScreenState extends State<MerchantCenterScreen> with Single
 
           TextField(
             controller: _recipientIdController,
+            onChanged: _onRecipientIdChanged,
             style: TextStyle(color: AppColors.getTextPrimary(isDark)),
             decoration: InputDecoration(
               labelText: _selectedRecipientType == 'User Recharge' ? 'User ID' : 'Coin Seller ID',
+              hintText: 'Enter exact ${_selectedRecipientType == 'User Recharge' ? 'User ID' : 'Coin Seller ID'}',
               border: const OutlineInputBorder(),
+              suffixIcon: _isLookingUp
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+                    )
+                  : (_verifiedRecipient != null
+                      ? const Icon(Icons.check_circle_rounded, color: Colors.greenAccent)
+                      : null),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
 
-          TextField(
-            controller: _recipientNameController,
-            style: TextStyle(color: AppColors.getTextPrimary(isDark)),
-            decoration: const InputDecoration(labelText: 'Recipient Name / Business Label', border: OutlineInputBorder()),
-          ),
-          const SizedBox(height: 12),
+          // Automatic Read-Only Verified Display Name or Lookup Error
+          if (_verifiedRecipient != null) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.green.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.greenAccent.withValues(alpha: 0.4), width: 1),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.verified_user_rounded, color: Colors.greenAccent, size: 22),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${_verifiedRecipient!['displayName']} (@${_verifiedRecipient!['username']})',
+                          style: TextStyle(
+                            color: AppColors.getTextPrimary(isDark),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                        Text(
+                          'Verified ${_selectedRecipientType == 'User Recharge' ? 'User' : 'Coin Seller'} • ID: ${_verifiedRecipient!['accountId']}',
+                          style: const TextStyle(color: Colors.greenAccent, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+          ] else if (_lookupError != null) ...[
+            Padding(
+              padding: const EdgeInsets.only(left: 4, bottom: 8),
+              child: Row(
+                children: [
+                  const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 16),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      _lookupError!,
+                      style: const TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
 
           TextField(
             controller: _coinsController,
             keyboardType: TextInputType.number,
             style: TextStyle(color: AppColors.getTextPrimary(isDark)),
-            decoration: const InputDecoration(labelText: 'Coin Amount', border: OutlineInputBorder()),
-          ),
-          const SizedBox(height: 12),
-
-          TextField(
-            controller: _pinController,
-            obscureText: true,
-            keyboardType: TextInputType.number,
-            style: TextStyle(color: AppColors.getTextPrimary(isDark)),
-            decoration: const InputDecoration(labelText: 'Merchant Security PIN (Default: 1234)', border: OutlineInputBorder()),
+            decoration: const InputDecoration(labelText: 'Coin Amount', hintText: 'Enter coin amount', border: OutlineInputBorder()),
           ),
           const SizedBox(height: 20),
 
@@ -236,30 +352,60 @@ class _MerchantCenterScreenState extends State<MerchantCenterScreen> with Single
             width: double.infinity,
             height: 50,
             child: ElevatedButton.icon(
-              icon: const Icon(Icons.flash_on_rounded),
-              label: Text('Execute $_selectedRecipientType', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              icon: prov.isLoading
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.flash_on_rounded),
+              label: Text(
+                prov.isLoading ? 'Processing...' : 'Execute $_selectedRecipientType',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: _selectedRecipientType == 'User Recharge' ? primary : Colors.amber.shade800,
                 foregroundColor: Colors.white,
+                disabledBackgroundColor: Colors.grey.shade700,
               ),
-              onPressed: () async {
-                final coins = int.tryParse(_coinsController.text.trim()) ?? 0;
-                final pin = _pinController.text.trim();
+              onPressed: (_verifiedRecipient == null || prov.isLoading)
+                  ? null
+                  : () async {
+                      final coins = int.tryParse(_coinsController.text.trim()) ?? 0;
+                      if (coins <= 0) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Please enter a valid coin amount greater than 0.')),
+                        );
+                        return;
+                      }
 
-                final err = await prov.executeMerchantRecharge(
-                  recipientType: _selectedRecipientType,
-                  recipientId: _recipientIdController.text.trim(),
-                  recipientName: _recipientNameController.text.trim(),
-                  coinAmount: coins,
-                  pin: pin,
-                );
+                      final recipientId = _verifiedRecipient!['accountId']?.toString() ?? _recipientIdController.text.trim();
+                      final recipientName = _verifiedRecipient!['displayName']?.toString() ?? 'User';
 
-                if (err == null) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('🎉 Merchant successfully executed $_selectedRecipientType of $coins coins!'), backgroundColor: Colors.green));
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ $err'), backgroundColor: Colors.redAccent));
-                }
-              },
+                      final err = await prov.executeMerchantRecharge(
+                        recipientType: _selectedRecipientType,
+                        recipientId: recipientId,
+                        recipientName: recipientName,
+                        coinAmount: coins,
+                        pin: '',
+                      );
+
+                      if (!mounted) return;
+
+                      if (err == null) {
+                        _coinsController.clear();
+                        setState(() {
+                          _verifiedRecipient = null;
+                          _recipientIdController.clear();
+                        });
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('🎉 Merchant successfully executed $_selectedRecipientType of $coins coins!'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('❌ $err'), backgroundColor: Colors.redAccent),
+                        );
+                      }
+                    },
             ),
           ),
         ],
@@ -295,126 +441,140 @@ class _MerchantCenterScreenState extends State<MerchantCenterScreen> with Single
   Widget _buildMerchantUsdBalanceTab(BuildContext context, bool isDark, Color primary) {
     final usdProv = context.watch<UsdBalanceProvider>();
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // USD Balance Overview Card
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(colors: [Color(0xFF8E2DE2), Color(0xFF4A00E0)]),
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [BoxShadow(color: const Color(0xFF8E2DE2).withValues(alpha: 0.35), blurRadius: 10, offset: const Offset(0, 4))],
+    return RefreshIndicator(
+      onRefresh: () async {
+        await usdProv.fetchMerchantUsdBalance();
+      },
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // USD Balance Overview Card
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(colors: [Color(0xFF8E2DE2), Color(0xFF4A00E0)]),
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [BoxShadow(color: const Color(0xFF8E2DE2).withValues(alpha: 0.35), blurRadius: 10, offset: const Offset(0, 4))],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Merchant USD Balance', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(color: Colors.black38, borderRadius: BorderRadius.circular(8)),
+                        child: const Text('Distinct from Coins', style: TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 10)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Available USD', style: TextStyle(color: Colors.white70, fontSize: 11)),
+                          Text('\$${usdProv.merchantAvailableUsd.toStringAsFixed(2)}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 24)),
+                        ],
+                      ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Total Received USD', style: TextStyle(color: Colors.white70, fontSize: 11)),
+                          Text('\$${usdProv.merchantTotalReceivedUsd.toStringAsFixed(2)}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            const SizedBox(height: 16),
+
+            // Action Buttons: Exchange to Coins & Transfer USD
+            Row(
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Merchant USD Balance', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(color: Colors.black38, borderRadius: BorderRadius.circular(8)),
-                      child: const Text('Distinct from Coins', style: TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 10)),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.currency_exchange_rounded),
+                    label: const Text('Exchange to Coins', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.amber.shade800,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
-                  ],
+                    onPressed: () {
+                      _showMerchantExchangeDialog(context, usdProv);
+                    },
+                  ),
                 ),
-                const SizedBox(height: 14),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Available USD', style: TextStyle(color: Colors.white70, fontSize: 11)),
-                        Text('\$${usdProv.merchantAvailableUsd.toStringAsFixed(2)}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 24)),
-                      ],
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.send_rounded),
+                    label: const Text('Transfer USD', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.getTextPrimary(isDark),
+                      side: BorderSide(color: primary),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Total Received USD', style: TextStyle(color: Colors.white70, fontSize: 11)),
-                        Text('\$${usdProv.merchantTotalReceivedUsd.toStringAsFixed(2)}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
-                      ],
-                    ),
-                  ],
+                    onPressed: () {
+                      _showMerchantTransferUsdDialog(context, usdProv);
+                    },
+                  ),
                 ),
               ],
             ),
-          ),
-          const SizedBox(height: 16),
+            const SizedBox(height: 20),
 
-          // Action Buttons: Exchange to Coins & Transfer USD
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  icon: const Icon(Icons.currency_exchange_rounded),
-                  label: const Text('Exchange to Coins', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.amber.shade800,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                  onPressed: () {
-                    _showMerchantExchangeDialog(context, usdProv);
-                  },
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: OutlinedButton.icon(
-                  icon: const Icon(Icons.send_rounded),
-                  label: const Text('Transfer USD', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.getTextPrimary(isDark),
-                    side: BorderSide(color: primary),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                  onPressed: () {
-                    _showMerchantTransferUsdDialog(context, usdProv);
-                  },
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
+            // USD Transaction History Ledger
+            Text('USD Transfer & Payout History', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark))),
+            const SizedBox(height: 10),
 
-          // USD Transaction History Ledger
-          Text('USD Transfer & Payout History', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark))),
-          const SizedBox(height: 10),
-
-          if (usdProv.merchantUsdTransactions.isEmpty)
-            const Text('No USD transactions logged.', style: TextStyle(color: Colors.grey, fontSize: 12))
-          else
-            ...usdProv.merchantUsdTransactions.map((tx) => Card(
-              color: AppColors.getCard(isDark),
-              margin: const EdgeInsets.only(bottom: 10),
-              child: ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: tx.type == 'Payout Withdrawal' ? Colors.green.withValues(alpha: 0.2) : Colors.purple.withValues(alpha: 0.2),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(tx.type == 'Payout Withdrawal' ? Icons.south_west_rounded : Icons.north_east_rounded, color: tx.type == 'Payout Withdrawal' ? Colors.greenAccent : Colors.purpleAccent, size: 20),
+            if (usdProv.isLoadingMerchantUsd)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: CircularProgressIndicator(strokeWidth: 2),
                 ),
-                title: Text('${tx.type} • \$${tx.usdAmount.toStringAsFixed(2)} USD', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.getTextPrimary(isDark))),
-                subtitle: Text('From: ${tx.senderName} (${tx.senderRole})\nAgency: ${tx.agencyName ?? 'N/A'}\nRef: ${tx.referenceId} • ${tx.timestamp.toString().substring(0, 16)}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                trailing: Text(tx.status, style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 11)),
-              ),
-            )),
-        ],
+              )
+            else if (usdProv.merchantUsdTransactions.isEmpty)
+              const Text('No USD transactions logged.', style: TextStyle(color: Colors.grey, fontSize: 12))
+            else
+              ...usdProv.merchantUsdTransactions.map((tx) => Card(
+                color: AppColors.getCard(isDark),
+                margin: const EdgeInsets.only(bottom: 10),
+                child: ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: tx.type == 'Payout Withdrawal' ? Colors.green.withValues(alpha: 0.2) : Colors.purple.withValues(alpha: 0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(tx.type == 'Payout Withdrawal' ? Icons.south_west_rounded : Icons.north_east_rounded, color: tx.type == 'Payout Withdrawal' ? Colors.greenAccent : Colors.purpleAccent, size: 20),
+                  ),
+                  title: Text('${tx.type} • \$${tx.usdAmount.toStringAsFixed(2)} USD', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.getTextPrimary(isDark))),
+                  subtitle: Text('From: ${tx.senderName} (${tx.senderRole})\nAgency: ${tx.agencyName ?? 'N/A'}\nRef: ${tx.referenceId} • ${tx.timestamp.toString().substring(0, 16)}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                  trailing: Text(tx.status, style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 11)),
+                ),
+              )),
+          ],
+        ),
       ),
     );
   }
 
   void _showMerchantExchangeDialog(BuildContext context, UsdBalanceProvider usdProv) {
     final usdController = TextEditingController(text: '20.00');
-    const rate = 10000;
+    const rate = 7000;
+    bool isSubmitting = false;
 
     showDialog(
       context: context,
@@ -444,7 +604,7 @@ class _MerchantCenterScreenState extends State<MerchantCenterScreen> with Single
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Admin Exchange Rate:', style: TextStyle(fontSize: 11, color: Colors.purpleAccent, fontWeight: FontWeight.bold)),
+                      const Text('Base Exchange Rate:', style: TextStyle(fontSize: 11, color: Colors.purpleAccent, fontWeight: FontWeight.bold)),
                       Text('\$1 USD = $rate Coins (Fee: \$0)', style: const TextStyle(fontSize: 11, color: Colors.purpleAccent, fontWeight: FontWeight.bold)),
                     ],
                   ),
@@ -471,16 +631,29 @@ class _MerchantCenterScreenState extends State<MerchantCenterScreen> with Single
               TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.purpleAccent, foregroundColor: Colors.white),
-                onPressed: () {
-                  final err = usdProv.exchangeUsdToCoins(entityType: 'Merchant', usdAmount: usdVal, ratePerDollar: rate);
-                  if (err == null) {
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('🎉 Merchant exchanged \$$usdVal USD into $calculatedCoins Gold Coins!'), backgroundColor: Colors.green));
-                  } else {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ $err'), backgroundColor: Colors.redAccent));
-                  }
-                },
-                child: const Text('Confirm Exchange', style: TextStyle(fontWeight: FontWeight.bold)),
+                onPressed: isSubmitting
+                    ? null
+                    : () async {
+                        setDlgState(() => isSubmitting = true);
+                        final err = await usdProv.exchangeUsdToCoinsRemote(usdAmount: usdVal, ratePerDollar: rate);
+                        if (context.mounted) {
+                          setDlgState(() => isSubmitting = false);
+                          if (err == null) {
+                            Navigator.pop(context);
+                            context.read<MerchantProvider>().fetchMyMerchantCenter();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('🎉 Merchant exchanged \$$usdVal USD into $calculatedCoins Gold Coins!'), backgroundColor: Colors.green),
+                            );
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('❌ $err'), backgroundColor: Colors.redAccent),
+                            );
+                          }
+                        }
+                      },
+                child: isSubmitting
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Text('Confirm Exchange', style: TextStyle(fontWeight: FontWeight.bold)),
               ),
             ],
           );
@@ -516,7 +689,7 @@ class _MerchantCenterScreenState extends State<MerchantCenterScreen> with Single
                 const Text('Select Recipient (Coin Seller or Merchant)', style: TextStyle(fontSize: 11, color: Colors.white70)),
                 const SizedBox(height: 6),
                 DropdownButtonFormField<SellerMerchantRecipient>(
-                  value: selectedRecipient,
+                  initialValue: selectedRecipient,
                   dropdownColor: const Color(0xFF1E1B2E),
                   style: const TextStyle(color: Colors.white),
                   decoration: const InputDecoration(border: OutlineInputBorder()),

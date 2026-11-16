@@ -23,11 +23,7 @@ class _RechargeAgencyScreenState extends State<RechargeAgencyScreen> with Ticker
   late TabController _tabController;
   final TextEditingController _userIdController = TextEditingController();
   final TextEditingController _coinsController = TextEditingController();
-  final TextEditingController _pinController = TextEditingController();
   final ScrollController _historyScrollController = ScrollController();
-
-  late AnimationController _shakeAnimationController;
-  late Animation<double> _shakeAnimation;
 
   VerifiedRecipientModel? _verifiedRecipient;
   String? _verificationError;
@@ -36,14 +32,6 @@ class _RechargeAgencyScreenState extends State<RechargeAgencyScreen> with Ticker
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
-
-    _shakeAnimationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 400),
-    );
-    _shakeAnimation = Tween<double>(begin: 0, end: 10)
-        .chain(CurveTween(curve: Curves.elasticIn))
-        .animate(_shakeAnimationController);
 
     _historyScrollController.addListener(() {
       if (_historyScrollController.position.pixels >=
@@ -75,9 +63,7 @@ class _RechargeAgencyScreenState extends State<RechargeAgencyScreen> with Ticker
     _tabController.dispose();
     _userIdController.dispose();
     _coinsController.dispose();
-    _pinController.dispose();
     _historyScrollController.dispose();
-    _shakeAnimationController.dispose();
     super.dispose();
   }
 
@@ -342,7 +328,7 @@ class _RechargeAgencyScreenState extends State<RechargeAgencyScreen> with Ticker
             ),
             const SizedBox(height: 14),
 
-            // Step 4 & 5: Enter Amount & 6-digit Security PIN
+            // Step 4: Enter Coin Amount
             TextField(
               controller: _coinsController,
               keyboardType: TextInputType.number,
@@ -353,33 +339,9 @@ class _RechargeAgencyScreenState extends State<RechargeAgencyScreen> with Ticker
                 border: OutlineInputBorder(),
               ),
             ),
-            const SizedBox(height: 14),
-
-            AnimatedBuilder(
-              animation: _shakeAnimation,
-              builder: (context, child) {
-                return Transform.translate(
-                  offset: Offset(_shakeAnimation.value, 0),
-                  child: child,
-                );
-              },
-              child: TextField(
-                controller: _pinController,
-                obscureText: true,
-                keyboardType: TextInputType.number,
-                maxLength: 6,
-                style: TextStyle(color: AppColors.getTextPrimary(isDark)),
-                decoration: const InputDecoration(
-                  labelText: '6-Digit Seller Security PIN',
-                  hintText: 'Enter 6-digit security PIN',
-                  border: OutlineInputBorder(),
-                  counterText: '',
-                ),
-              ),
-            ),
             const SizedBox(height: 20),
 
-            // Step 6: Execute Confirmation Button
+            // Step 5: Execute Confirmation Button
             SizedBox(
               width: double.infinity,
               height: 48,
@@ -403,19 +365,10 @@ class _RechargeAgencyScreenState extends State<RechargeAgencyScreen> with Ticker
                     ? null
                     : () async {
                         final coins = int.tryParse(_coinsController.text.trim()) ?? 0;
-                        final pin = _pinController.text.trim();
 
                         if (coins <= 0) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(content: Text('Please enter a valid coin amount greater than 0.')),
-                          );
-                          return;
-                        }
-
-                        if (pin.isEmpty) {
-                          _shakePinField();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Please enter your 6-digit security PIN.')),
                           );
                           return;
                         }
@@ -427,12 +380,11 @@ class _RechargeAgencyScreenState extends State<RechargeAgencyScreen> with Ticker
                           final result = await prov.executeRechargeTransfer(
                             recipientIdentifier: _verifiedRecipient!.accountId,
                             coins: coins,
-                            pin: pin,
+                            pin: '',
                           );
 
                           if (!mounted) return;
                           _coinsController.clear();
-                          _pinController.clear();
                           setState(() => _verifiedRecipient = null);
 
                           // Invalidate/refresh wallet balance if self recharge
@@ -452,10 +404,6 @@ class _RechargeAgencyScreenState extends State<RechargeAgencyScreen> with Ticker
         ],
       ),
     );
-  }
-
-  void _shakePinField() {
-    _shakeAnimationController.forward(from: 0.0);
   }
 
   void _handleTransferError(dynamic error) {
@@ -492,15 +440,6 @@ class _RechargeAgencyScreenState extends State<RechargeAgencyScreen> with Ticker
               child: const Text('OK'),
             ),
           ],
-        ),
-      );
-    } else if (code == 'INVALID_SECURITY_PIN' || code == 'INVALID_PIN' || code == 'INCORRECT_PIN') {
-      _shakePinField();
-      _pinController.clear();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Incorrect security PIN. Please try again.'),
-          backgroundColor: Colors.redAccent,
         ),
       );
     } else if (code == 'SELLER_SUSPENDED' ||

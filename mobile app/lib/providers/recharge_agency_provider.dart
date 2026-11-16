@@ -219,7 +219,7 @@ class RechargeAgencyProvider extends ChangeNotifier {
   Future<SellerRechargeResult> executeRechargeTransfer({
     required String recipientIdentifier,
     required int coins,
-    required String pin,
+    String pin = '',
     String? notes,
   }) async {
     if (_isExecutingTransfer) {
@@ -236,14 +236,6 @@ class RechargeAgencyProvider extends ChangeNotifier {
       );
     }
 
-    final cleanPin = pin.trim();
-    if (cleanPin.isEmpty) {
-      throw ApiException(
-        message: 'Security PIN is required.',
-        code: 'PIN_REQUIRED',
-      );
-    }
-
     _isExecutingTransfer = true;
     _transferError = null;
     _transferErrorCode = null;
@@ -256,10 +248,12 @@ class RechargeAgencyProvider extends ChangeNotifier {
         'recipientUserId': recipientIdentifier,
         'recipientIdentifier': recipientIdentifier,
         'amountCoins': coins,
-        'pin': cleanPin,
-        'securityPin': cleanPin,
+        if (pin.trim().isNotEmpty) ...{
+          'pin': pin.trim(),
+          'securityPin': pin.trim(),
+        },
         'idempotencyKey': idempotencyKey,
-        if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+        'notes': notes ?? 'Coin Seller Transfer',
       };
 
       final response = await ApiClient.instance.post(

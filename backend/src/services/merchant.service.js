@@ -531,7 +531,7 @@ export async function getMerchantLedger(userId, { page = 1, limit = 20 } = {}, d
   };
 }
 
-export async function executeMerchantRecharge(merchantUserId, { recipientId, amountCoins, notes }, { ipAddress } = {}, db = prisma) {
+export async function executeMerchantRecharge(merchantUserId, { recipientId, amountCoins, notes, idempotencyKey }, { ipAddress } = {}, db = prisma) {
   const merchant = await db.merchant.findUnique({
     where: { userId: merchantUserId },
     include: {
@@ -590,7 +590,27 @@ export async function executeMerchantRecharge(merchantUserId, { recipientId, amo
     throw error;
   }
 
+  const txRefId = idempotencyKey || `MERCHANT_RECHARGE_${merchant.id}_${recipient.id}_${Date.now()}`;
+
   const result = await db.$transaction(async (tx) => {
+    // 0. Idempotency check if caller supplied explicit idempotency key
+    if (idempotencyKey) {
+      const existing = await tx.walletLedger.findFirst({
+        where: { referenceId: txRefId },
+      });
+      if (existing) {
+        return {
+          merchantId: merchant.id,
+          companyName: merchant.companyName,
+          remainingQuota: currentQuota.toString(),
+          recipientId: recipient.id,
+          recipientUsername: recipient.username,
+          amountRecharged: amt.toString(),
+          alreadyProcessed: true,
+        };
+      }
+    }
+
     // 1. Deduct from merchant quota
     const updatedMerchant = await tx.merchant.update({
       where: { id: merchant.id },
@@ -599,23 +619,41 @@ export async function executeMerchantRecharge(merchantUserId, { recipientId, amo
       },
     });
 
+    const isCoinSeller = (recipient.userType === 'SELLER') || (notes && notes.toLowerCase().includes('coin seller'));
+
     // 2. Ensure recipient has wallet & credit coins
     let recipientWallet = recipient.wallet;
+    let recCoinsBefore = 0n;
+    let recSellerCoinsBefore = 0n;
+
     if (!recipientWallet) {
       recipientWallet = await tx.wallet.create({
         data: {
           userId: recipient.id,
-          coinBalance: amt,
+          coinBalance: isCoinSeller ? 0n : amt,
           diamondBalance: 0n,
+          sellerBalanceCoins: isCoinSeller ? amt : 0n,
         },
       });
     } else {
-      recipientWallet = await tx.wallet.update({
-        where: { id: recipientWallet.id },
-        data: {
-          coinBalance: { increment: amt },
-        },
-      });
+      recCoinsBefore = recipientWallet.coinBalance || 0n;
+      recSellerCoinsBefore = recipientWallet.sellerBalanceCoins || 0n;
+
+      if (isCoinSeller) {
+        recipientWallet = await tx.wallet.update({
+          where: { id: recipientWallet.id },
+          data: {
+            sellerBalanceCoins: { increment: amt },
+          },
+        });
+      } else {
+        recipientWallet = await tx.wallet.update({
+          where: { id: recipientWallet.id },
+          data: {
+            coinBalance: { increment: amt },
+          },
+        });
+      }
     }
 
     // 3. If merchant has wallet, update sellerBalanceCoins
@@ -644,12 +682,8 @@ export async function executeMerchantRecharge(merchantUserId, { recipientId, amo
             coinBalance: merchantWallet.coinBalance.toString(),
             sellerBalanceCoins: newSellerCoins.toString(),
           },
+          referenceId: txRefId,
           reason: `Merchant Recharge to @${recipient.username} (${recipient.id}): ${notes || 'Recharge transfer'}`,
-          metadata: {
-            recipientId: recipient.id,
-            recipientUsername: recipient.username,
-            ipAddress,
-          },
         },
       });
     }
@@ -661,17 +695,15 @@ export async function executeMerchantRecharge(merchantUserId, { recipientId, amo
         transactionType: 'TRANSFER_IN',
         coinDelta: amt,
         balanceBefore: {
-          coinBalance: (recipientWallet.coinBalance - amt).toString(),
+          coinBalance: recCoinsBefore.toString(),
+          sellerBalanceCoins: recSellerCoinsBefore.toString(),
         },
         balanceAfter: {
-          coinBalance: recipientWallet.coinBalance.toString(),
+          coinBalance: (isCoinSeller ? recCoinsBefore : recCoinsBefore + amt).toString(),
+          sellerBalanceCoins: (isCoinSeller ? recSellerCoinsBefore + amt : recSellerCoinsBefore).toString(),
         },
+        referenceId: txRefId,
         reason: `Merchant Recharge from ${merchant.companyName}: ${notes || 'Recharge transfer'}`,
-        metadata: {
-          merchantId: merchant.id,
-          merchantCompanyName: merchant.companyName,
-          ipAddress,
-        },
       },
     });
 
@@ -682,7 +714,175 @@ export async function executeMerchantRecharge(merchantUserId, { recipientId, amo
       recipientId: recipient.id,
       recipientUsername: recipient.username,
       amountRecharged: amt.toString(),
-      recipientNewBalance: recipientWallet.coinBalance.toString(),
+      recipientNewBalance: isCoinSeller
+        ? (recSellerCoinsBefore + amt).toString()
+        : (recCoinsBefore + amt).toString(),
+    };
+  });
+
+  return result;
+}
+
+export async function getMerchantUsdBalance(userId, db = prisma) {
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    include: {
+      wallet: true,
+      merchant: true,
+    },
+  });
+
+  if (!user || !user.merchant) {
+    const error = new Error('Merchant account not found');
+    error.statusCode = 404;
+    error.code = 'MERCHANT_NOT_FOUND';
+    throw error;
+  }
+
+  const wallet = user.wallet;
+  const availableUSD = wallet?.usdBalance ? Number(wallet.usdBalance) : 0.00;
+
+  let totalReceivedUSD = 0.00;
+  let transactions = [];
+
+  if (wallet) {
+    const ledgers = await db.walletLedger.findMany({
+      where: {
+        walletId: wallet.id,
+        OR: [
+          { transactionType: 'USD_EXCHANGE' },
+          { usdDelta: { not: 0 } },
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    });
+
+    for (const l of ledgers) {
+      const delta = Number(l.usdDelta || 0);
+      if (delta > 0) {
+        totalReceivedUSD += delta;
+      }
+    }
+
+    transactions = ledgers.map((l) => ({
+      id: l.id,
+      transactionId: l.id,
+      usdAmount: Math.abs(Number(l.usdDelta || 0)),
+      type: l.transactionType === 'USD_EXCHANGE' ? 'Exchange to Coins' : 'Payout Withdrawal',
+      status: 'Completed',
+      timestamp: l.createdAt,
+      referenceId: l.referenceId || l.id,
+      notes: l.reason || '',
+    }));
+  }
+
+  return {
+    availableUSD: availableUSD.toFixed(2),
+    totalReceivedUSD: totalReceivedUSD.toFixed(2),
+    transactions,
+  };
+}
+
+export async function exchangeUsdToCoins(userId, { usdAmount, ratePerDollar = 7000 }, { ipAddress } = {}, db = prisma) {
+  const numUsd = Number(usdAmount);
+  if (isNaN(numUsd) || numUsd <= 0) {
+    const error = new Error('Invalid USD exchange amount. Must be greater than 0.');
+    error.statusCode = 400;
+    error.code = 'INVALID_USD_AMOUNT';
+    throw error;
+  }
+
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    include: {
+      wallet: true,
+      merchant: true,
+    },
+  });
+
+  if (!user || !user.merchant || user.merchant.status !== 'ACTIVE') {
+    const error = new Error('Authorized active merchant account required');
+    error.statusCode = 403;
+    error.code = 'MERCHANT_INACTIVE';
+    throw error;
+  }
+
+  const wallet = user.wallet;
+  if (!wallet) {
+    const error = new Error('Wallet not found');
+    error.statusCode = 404;
+    error.code = 'WALLET_NOT_FOUND';
+    throw error;
+  }
+
+  const currentUsd = Number(wallet.usdBalance || 0);
+  if (currentUsd < numUsd) {
+    const error = new Error(`Insufficient USD balance. Available: $${currentUsd.toFixed(2)}, Requested: $${numUsd.toFixed(2)}`);
+    error.statusCode = 400;
+    error.code = 'INSUFFICIENT_USD_BALANCE';
+    throw error;
+  }
+
+  const rate = Number(ratePerDollar) > 0 ? Number(ratePerDollar) : 7000;
+  const coinsToCredit = BigInt(Math.floor(numUsd * rate));
+
+  const result = await db.$transaction(async (tx) => {
+    const newUsd = currentUsd - numUsd;
+    const currentSellerCoins = wallet.sellerBalanceCoins || 0n;
+    const newSellerCoins = currentSellerCoins + coinsToCredit;
+
+    // 1. Update wallet usdBalance and sellerBalanceCoins
+    await tx.wallet.update({
+      where: { id: wallet.id },
+      data: {
+        usdBalance: newUsd,
+        sellerBalanceCoins: newSellerCoins,
+      },
+    });
+
+    // 2. Also increment merchant monthlyQuotaCoins
+    await tx.merchant.update({
+      where: { id: user.merchant.id },
+      data: {
+        monthlyQuotaCoins: { increment: coinsToCredit },
+      },
+    });
+
+    const txRef = `EX-MRC-${Date.now()}`;
+
+    // 3. Create immutable WalletLedger entry
+    const ledger = await tx.walletLedger.create({
+      data: {
+        walletId: wallet.id,
+        transactionType: 'USD_EXCHANGE',
+        usdDelta: -numUsd,
+        coinDelta: coinsToCredit,
+        balanceBefore: {
+          usdBalance: currentUsd.toFixed(2),
+          sellerBalanceCoins: currentSellerCoins.toString(),
+        },
+        balanceAfter: {
+          usdBalance: newUsd.toFixed(2),
+          sellerBalanceCoins: newSellerCoins.toString(),
+        },
+        referenceId: txRef,
+        reason: `Exchanged $${numUsd.toFixed(2)} USD to ${coinsToCredit.toString()} Coins (Rate: 1 USD = ${rate} Coins)`,
+      },
+    });
+
+    return {
+      availableUSD: newUsd.toFixed(2),
+      coinsCredited: coinsToCredit.toString(),
+      rateApplied: rate,
+      transaction: {
+        id: ledger.id,
+        referenceId: txRef,
+        usdAmount: numUsd,
+        coinsCredited: coinsToCredit.toString(),
+        status: 'Completed',
+        timestamp: ledger.createdAt,
+      },
     };
   });
 
@@ -699,5 +899,7 @@ export default {
   getMerchantDashboard,
   getMerchantLedger,
   executeMerchantRecharge,
+  getMerchantUsdBalance,
+  exchangeUsdToCoins,
   sanitizeMerchant,
 };

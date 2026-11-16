@@ -8,6 +8,7 @@ import '../live/create_live_room_screen.dart';
 import '../settings/support_center_screen.dart';
 import '../wallet/authorized_sellers_screen.dart';
 import '../wallet/diamond_transfer_screen.dart';
+import 'apply_live_host_screen.dart';
 
 class LiveHostCenterScreen extends StatefulWidget {
   const LiveHostCenterScreen({super.key});
@@ -121,23 +122,302 @@ class _LiveHostCenterScreenState extends State<LiveHostCenterScreen>
         );
       }
 
+      final app = authUser.id.isNotEmpty
+          ? liveHostProv.getApplicationByUserId(authUser.id)
+          : null;
+
+      // Case A: Application is under review
+      if (app != null && app.status == 'Under Review') {
+        return Scaffold(
+          backgroundColor: AppColors.getBackground(isDark),
+          appBar: AppBar(
+            title: const Text('Live Host Center'),
+            backgroundColor: AppColors.getBackground(isDark),
+            elevation: 0,
+          ),
+          body: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withValues(alpha: 0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.hourglass_top_rounded, size: 44, color: Colors.amber),
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    'Application Under Review',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.getTextPrimary(isDark),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Your application for Direct Live Host is currently being reviewed by ZeParty Admin Operations. You will receive an in-app notification once verified.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 13, color: Colors.grey, height: 1.4),
+                  ),
+                  const SizedBox(height: 20),
+                  Card(
+                    color: AppColors.getCard(isDark),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('Status', style: TextStyle(color: Colors.grey, fontSize: 13)),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber.withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Text(
+                                  'Under Review',
+                                  style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 12),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const Divider(height: 20),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('Host Category', style: TextStyle(color: Colors.grey, fontSize: 13)),
+                              Text(app.category, style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark), fontSize: 13)),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('Submitted Date', style: TextStyle(color: Colors.grey, fontSize: 13)),
+                              Text(
+                                '${app.submittedAt.year}-${app.submittedAt.month.toString().padLeft(2, '0')}-${app.submittedAt.day.toString().padLeft(2, '0')}',
+                                style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark), fontSize: 13),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFFF9900),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    ),
+                    onPressed: _loadData,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Refresh Status', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
+
+      // Case B: Application was rejected
+      if (app != null && app.status == 'Rejected') {
+        return Scaffold(
+          backgroundColor: AppColors.getBackground(isDark),
+          appBar: AppBar(
+            title: const Text('Live Host Center'),
+            backgroundColor: AppColors.getBackground(isDark),
+            elevation: 0,
+          ),
+          body: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      color: Colors.redAccent.withValues(alpha: 0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.cancel_outlined, size: 44, color: Colors.redAccent),
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    'Application Not Approved',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.getTextPrimary(isDark),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Your previous host application was not approved. Please review our hosting standards and apply again.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 13, color: Colors.grey, height: 1.4),
+                  ),
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFFF9900),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+                    ),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const ApplyLiveHostScreen()),
+                      ).then((_) => _loadData());
+                    },
+                    icon: const Icon(Icons.edit_document),
+                    label: const Text('Reapply as Live Host', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
+
+      // Case C: User is not yet registered as a Live Host (Onboarding / Application banner)
       return Scaffold(
         backgroundColor: AppColors.getBackground(isDark),
         appBar: AppBar(
-          title: const Text('Live Host Center'),
+          title: const Text('Direct Live Host Center'),
           backgroundColor: AppColors.getBackground(isDark),
           elevation: 0,
         ),
-        body: Center(
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
           child: Column(
-            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              const Text('No active Direct Live Host profile found.'),
+              const SizedBox(height: 10),
+              Container(
+                width: 90,
+                height: 90,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFFF9900), Color(0xFFFF5500)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFFFF9900).withValues(alpha: 0.4),
+                      blurRadius: 16,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: const Icon(Icons.live_tv_rounded, size: 48, color: Colors.white),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Become a Direct Live Host',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.getTextPrimary(isDark),
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Broadcast live on ZeParty, receive virtual gifts from fans, achieve target milestones, and earn guaranteed salary payouts in USD.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 13, color: Colors.grey, height: 1.5),
+              ),
+              const SizedBox(height: 24),
+              Card(
+                color: AppColors.getCard(isDark),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      ListTile(
+                        dense: true,
+                        leading: const CircleAvatar(
+                          backgroundColor: Colors.amber,
+                          radius: 16,
+                          child: Icon(Icons.diamond_rounded, size: 18, color: Colors.black87),
+                        ),
+                        title: Text('Daily Diamond Targets', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark), fontSize: 13)),
+                        subtitle: const Text('Reach daily target milestones and unlock higher salary tiers.', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                      ),
+                      const Divider(height: 12),
+                      ListTile(
+                        dense: true,
+                        leading: const CircleAvatar(
+                          backgroundColor: Colors.green,
+                          radius: 16,
+                          child: Icon(Icons.attach_money_rounded, size: 18, color: Colors.white),
+                        ),
+                        title: Text('USD Salary Withdrawals', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark), fontSize: 13)),
+                        subtitle: const Text('Direct salary payouts credited in USD, withdrawable to Coin Sellers or Merchants.', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                      ),
+                      const Divider(height: 12),
+                      ListTile(
+                        dense: true,
+                        leading: const CircleAvatar(
+                          backgroundColor: Colors.purpleAccent,
+                          radius: 16,
+                          child: Icon(Icons.stars_rounded, size: 18, color: Colors.white),
+                        ),
+                        title: Text('Exclusive Badges & Privileges', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark), fontSize: 13)),
+                        subtitle: const Text('Official host badge, special avatar frames, and priority room recommendations.', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 28),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFFF9900),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    elevation: 4,
+                  ),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const ApplyLiveHostScreen()),
+                    ).then((_) => _loadData());
+                  },
+                  icon: const Icon(Icons.how_to_reg_rounded, size: 20),
+                  label: const Text('Apply for Live Host', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                ),
+              ),
               const SizedBox(height: 12),
               OutlinedButton.icon(
                 onPressed: _loadData,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Refresh'),
+                icon: const Icon(Icons.refresh_rounded, size: 18),
+                label: const Text('Check Status'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.grey,
+                  side: const BorderSide(color: Colors.white24),
+                ),
               ),
             ],
           ),

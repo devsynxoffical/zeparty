@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/services/api_client.dart';
 
 class UsdTransactionModel {
   final String id;
@@ -84,80 +85,29 @@ class UsdBalanceProvider extends ChangeNotifier {
   final List<UsdTransactionModel> _audioHostWithdrawalHistory = [];
 
   // BD Operator Wallet
-  double _bdAvailableBalance = 3450.00;
+  double _bdAvailableBalance = 0.00;
   double _bdPendingBalance = 0.00;
-  final String _bdCurrentEarningPeriod = 'September 2026';
-  final double _bdCommissionEarned = 3450.00;
+  final String _bdCurrentEarningPeriod = 'Current Period';
+  final double _bdCommissionEarned = 0.00;
 
-  final List<UsdTransactionModel> _bdWithdrawalHistory = [
-    UsdTransactionModel(
-      id: 'w_bd_201',
-      senderId: 'BD-88091',
-      senderName: 'ZeParty Regional Director',
-      senderRole: 'BD Operator',
-      agencyId: 'bd_corp',
-      agencyName: 'MENA BD Division',
-      recipientId: 'MRC-201',
-      recipientName: 'ZeParty Premier Merchant',
-      recipientType: 'Merchant',
-      usdAmount: 1200.00,
-      payoutPeriod: 'August 2026',
-      timestamp: DateTime(2026, 9, 2, 10, 15),
-      referenceId: 'REF-BD-9912',
-      status: 'Completed',
-      type: 'Payout Withdrawal',
-    ),
-  ];
+  final List<UsdTransactionModel> _bdWithdrawalHistory = [];
 
   // Coin Seller USD Accounting
-  double _sellerAvailableUsd = 1250.00;
+  double _sellerAvailableUsd = 0.00;
   double _sellerPendingUsd = 0.00;
-  double _sellerTotalReceivedUsd = 3850.00;
+  double _sellerTotalReceivedUsd = 0.00;
 
-  final List<UsdTransactionModel> _sellerUsdTransactions = [
-    UsdTransactionModel(
-      id: 'tx_sel_usd_1',
-      senderId: 'host_aud_77',
-      senderName: 'Sophia Rose',
-      senderRole: 'Audio Host',
-      agencyId: 'ag_royal',
-      agencyName: 'ZeParty Royal Agency',
-      recipientId: 'SEL-101',
-      recipientName: 'Global Reseller Alpha',
-      recipientType: 'Coin Seller',
-      usdAmount: 380.00,
-      payoutPeriod: 'Sep 01 - Sep 15, 2026',
-      timestamp: DateTime(2026, 9, 16, 14, 30),
-      referenceId: 'REF-HOST-3801',
-      status: 'Completed',
-      type: 'Payout Withdrawal',
-    ),
-  ];
+  final List<UsdTransactionModel> _sellerUsdTransactions = [];
 
   // Merchant USD Accounting
-  double _merchantAvailableUsd = 2800.00;
+  double _merchantAvailableUsd = 0.00;
   double _merchantPendingUsd = 0.00;
-  double _merchantTotalReceivedUsd = 7400.00;
+  double _merchantTotalReceivedUsd = 0.00;
+  bool _isLoadingMerchantUsd = false;
 
-  final List<UsdTransactionModel> _merchantUsdTransactions = [
-    UsdTransactionModel(
-      id: 'tx_mrc_usd_1',
-      senderId: 'BD-88091',
-      senderName: 'ZeParty Regional Director',
-      senderRole: 'BD Operator',
-      agencyId: 'bd_corp',
-      agencyName: 'MENA BD Division',
-      recipientId: 'MRC-201',
-      recipientName: 'ZeParty Premier Merchant',
-      recipientType: 'Merchant',
-      usdAmount: 1200.00,
-      payoutPeriod: 'August 2026',
-      timestamp: DateTime(2026, 9, 2, 10, 15),
-      referenceId: 'REF-BD-9912',
-      status: 'Completed',
-      type: 'Payout Withdrawal',
-    ),
-  ];
+  final List<UsdTransactionModel> _merchantUsdTransactions = [];
+
+  bool get isLoadingMerchantUsd => _isLoadingMerchantUsd;
 
   // Recipient Catalog
   final List<SellerMerchantRecipient> _coinSellers = [
@@ -365,6 +315,85 @@ class UsdBalanceProvider extends ChangeNotifier {
 
     notifyListeners();
     return null;
+  }
+
+  // ---- Authoritative Remote Backend USD Synchronization ----
+
+  Future<void> fetchMerchantUsdBalance() async {
+    _isLoadingMerchantUsd = true;
+    notifyListeners();
+
+    try {
+      final res = await ApiClient.instance.get('/v1/merchants/usd-balance');
+      if (res.statusCode == 200 && res.data != null && res.data['data'] != null) {
+        final data = res.data['data'];
+        _merchantAvailableUsd = double.tryParse(data['availableUSD']?.toString() ?? '0') ?? 0.0;
+        _merchantTotalReceivedUsd = double.tryParse(data['totalReceivedUSD']?.toString() ?? '0') ?? 0.0;
+
+        if (data['transactions'] is List) {
+          _merchantUsdTransactions.clear();
+          for (final raw in (data['transactions'] as List)) {
+            final t = Map<String, dynamic>.from(raw as Map);
+            _merchantUsdTransactions.add(
+              UsdTransactionModel(
+                id: t['id']?.toString() ?? 'tx_${DateTime.now().millisecondsSinceEpoch}',
+                senderId: t['senderId']?.toString() ?? 'MRC',
+                senderName: t['senderName']?.toString() ?? 'Merchant',
+                senderRole: 'Merchant',
+                agencyId: null,
+                agencyName: null,
+                recipientId: t['recipientId']?.toString() ?? 'MRC',
+                recipientName: t['notes']?.toString() ?? 'ZeParty System',
+                recipientType: 'Merchant',
+                usdAmount: double.tryParse(t['usdAmount']?.toString() ?? '0') ?? 0.0,
+                payoutPeriod: t['payoutPeriod']?.toString() ?? 'Ledger Record',
+                timestamp: DateTime.tryParse(t['timestamp']?.toString() ?? '') ?? DateTime.now(),
+                referenceId: t['referenceId']?.toString() ?? 'REF',
+                status: t['status']?.toString() ?? 'Completed',
+                type: t['type']?.toString() ?? 'USD Transaction',
+              ),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[UsdBalanceProvider] fetchMerchantUsdBalance error: $e');
+    } finally {
+      _isLoadingMerchantUsd = false;
+      notifyListeners();
+    }
+  }
+
+  Future<String?> exchangeUsdToCoinsRemote({
+    required double usdAmount,
+    int ratePerDollar = 7000,
+  }) async {
+    if (usdAmount <= 0) return 'Invalid USD amount. Must be greater than 0.';
+    if (usdAmount > _merchantAvailableUsd) {
+      return 'Requested amount (\$${usdAmount.toStringAsFixed(2)}) exceeds available USD balance (\$${_merchantAvailableUsd.toStringAsFixed(2)}).';
+    }
+
+    try {
+      final res = await ApiClient.instance.post(
+        '/v1/merchants/exchange-usd',
+        data: {
+          'usdAmount': usdAmount,
+          'ratePerDollar': ratePerDollar,
+        },
+      );
+
+      if (res.statusCode == 200 && res.data?['success'] == true) {
+        // Refetch authoritative balance after exchange
+        await fetchMerchantUsdBalance();
+        return null;
+      } else {
+        return res.data?['message']?.toString() ?? 'Failed to exchange USD to coins.';
+      }
+    } on ApiException catch (e) {
+      return e.message;
+    } catch (e) {
+      return 'Network error executing exchange: $e';
+    }
   }
 
   // Transfer USD between Coin Sellers and Merchants

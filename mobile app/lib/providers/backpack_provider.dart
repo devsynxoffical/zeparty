@@ -209,78 +209,114 @@ class BackpackProvider extends ChangeNotifier {
         }
       }
 
-      // Synthesize unlocked SVIP assets for user across all earned tiers (1..svipLevel)
+      // Purge any fake or noble-copied SVIP 1-5 frames, bubbles, or vehicles
+      mergedAssets.removeWhere((a) {
+        final img = (a.asset?.imageUrl ?? '').toLowerCase();
+        final name = (a.asset?.name ?? '').toLowerCase();
+        final id = a.id.toLowerCase();
+        for (int i = 1; i <= 5; i++) {
+          if (img.contains('svip${i}_frame') ||
+              id.contains('svip$i-frame') ||
+              name.contains('svip $i frame') ||
+              name.contains('svip $i bronze') ||
+              name.contains('svip $i silver') ||
+              name.contains('svip $i gold') ||
+              name.contains('svip $i platinum') ||
+              name.contains('svip $i diamond')) {
+            return true;
+          }
+          if (img.contains('svip${i}_chat_bubble') ||
+              id.contains('svip$i-bubble') ||
+              name.contains('svip $i chat bubble')) {
+            return true;
+          }
+          if (img.contains('svip${i}_entry') ||
+              id.contains('svip$i-vehicle') ||
+              name.contains('svip $i entry') ||
+              name.contains('svip $i vip vehi')) {
+            return true;
+          }
+        }
+        return false;
+      });
+
+      // Synthesize unlocked SVIP assets for user according to SVIP privilege rules
+      // (Frames, Chat Bubbles, and Vehicles start strictly at SVIP 6+)
       if (activeUser != null && activeUser.svipLevel > 0) {
         final maxLvl = activeUser.svipLevel;
         for (int svipLvl = maxLvl; svipLvl >= 1; svipLvl--) {
-          final svipFrameAsset = 'assets/svip/svip${svipLvl}_frame.webp';
-          final hasSvipFrame = mergedAssets.any((a) => a.asset?.imageUrl == svipFrameAsset || a.id.contains('svip$svipLvl-frame'));
-          if (!hasSvipFrame) {
-            final isFrameEquipped = activeUser.avatarFrame == svipFrameAsset ||
-                ((activeUser.avatarFrame.isEmpty || activeUser.avatarFrame == 'none') && svipLvl == maxLvl);
-            mergedAssets.insert(0, UserAssetModel(
-              id: 'assigned-frame-svip$svipLvl-${activeUser.id}',
-              userId: activeUser.id,
-              assetId: 'assigned-asset-svip$svipLvl-frame',
-              isEquipped: isFrameEquipped,
-              expiresAt: DateTime.now().add(const Duration(days: 365)),
-              isExpired: false,
-              asset: StoreItemModel(
-                id: 'assigned-asset-svip$svipLvl-frame',
-                name: 'SVIP $svipLvl Frame',
-                categoryId: 'Frames',
-                assetType: 'FRAME',
-                imageUrl: svipFrameAsset,
-                priceCoins: 0,
-                durationDays: 365,
-              ),
-            ));
+          // Avatar Frames, Bubbles, and Vehicles unlock ONLY starting at SVIP 6+
+          if (svipLvl >= 6) {
+            final svipFrameAsset = 'assets/svip/svip${svipLvl}_frame.webp';
+            final hasSvipFrame = mergedAssets.any((a) => a.asset?.imageUrl == svipFrameAsset || a.id.contains('svip$svipLvl-frame'));
+            if (!hasSvipFrame) {
+              final isFrameEquipped = activeUser.avatarFrame == svipFrameAsset ||
+                  ((activeUser.avatarFrame.isEmpty || activeUser.avatarFrame == 'none') && svipLvl == maxLvl);
+              mergedAssets.insert(0, UserAssetModel(
+                id: 'assigned-frame-svip$svipLvl-${activeUser.id}',
+                userId: activeUser.id,
+                assetId: 'assigned-asset-svip$svipLvl-frame',
+                isEquipped: isFrameEquipped,
+                expiresAt: DateTime.now().add(const Duration(days: 365)),
+                isExpired: false,
+                asset: StoreItemModel(
+                  id: 'assigned-asset-svip$svipLvl-frame',
+                  name: 'SVIP $svipLvl Frame',
+                  categoryId: 'Frames',
+                  assetType: 'FRAME',
+                  imageUrl: svipFrameAsset,
+                  priceCoins: 0,
+                  durationDays: 365,
+                ),
+              ));
+            }
+
+            final svipBubbleAsset = 'assets/svip/svip${svipLvl}_chat_bubble.webp';
+            final hasSvipBubble = mergedAssets.any((a) => a.asset?.imageUrl == svipBubbleAsset || a.id.contains('svip$svipLvl-bubble'));
+            if (!hasSvipBubble) {
+              mergedAssets.add(UserAssetModel(
+                id: 'assigned-bubble-svip$svipLvl-${activeUser.id}',
+                userId: activeUser.id,
+                assetId: 'assigned-asset-svip$svipLvl-bubble',
+                isEquipped: false,
+                expiresAt: DateTime.now().add(const Duration(days: 365)),
+                isExpired: false,
+                asset: StoreItemModel(
+                  id: 'assigned-asset-svip$svipLvl-bubble',
+                  name: 'SVIP $svipLvl Chat Bubble',
+                  categoryId: 'Bubbles',
+                  assetType: 'BUBBLE',
+                  imageUrl: svipBubbleAsset,
+                  priceCoins: 0,
+                  durationDays: 365,
+                ),
+              ));
+            }
+
+            final svipCarAsset = 'assets/svip/svip${svipLvl}_entry.webp';
+            final hasSvipCar = mergedAssets.any((a) => a.asset?.imageUrl == svipCarAsset || a.id.contains('svip$svipLvl-vehicle'));
+            if (!hasSvipCar) {
+              mergedAssets.add(UserAssetModel(
+                id: 'assigned-vehicle-svip$svipLvl-${activeUser.id}',
+                userId: activeUser.id,
+                assetId: 'assigned-asset-svip$svipLvl-vehicle',
+                isEquipped: false,
+                expiresAt: DateTime.now().add(const Duration(days: 365)),
+                isExpired: false,
+                asset: StoreItemModel(
+                  id: 'assigned-asset-svip$svipLvl-vehicle',
+                  name: 'SVIP $svipLvl Entry Effect',
+                  categoryId: 'Cars',
+                  assetType: 'VEHICLE',
+                  imageUrl: svipCarAsset,
+                  priceCoins: 0,
+                  durationDays: 365,
+                ),
+              ));
+            }
           }
 
-          final svipBubbleAsset = 'assets/svip/svip${svipLvl}_chat_bubble.webp';
-          final hasSvipBubble = mergedAssets.any((a) => a.asset?.imageUrl == svipBubbleAsset || a.id.contains('svip$svipLvl-bubble'));
-          if (!hasSvipBubble) {
-            mergedAssets.add(UserAssetModel(
-              id: 'assigned-bubble-svip$svipLvl-${activeUser.id}',
-              userId: activeUser.id,
-              assetId: 'assigned-asset-svip$svipLvl-bubble',
-              isEquipped: false,
-              expiresAt: DateTime.now().add(const Duration(days: 365)),
-              isExpired: false,
-              asset: StoreItemModel(
-                id: 'assigned-asset-svip$svipLvl-bubble',
-                name: 'SVIP $svipLvl Chat Bubble',
-                categoryId: 'Bubbles',
-                assetType: 'BUBBLE',
-                imageUrl: svipBubbleAsset,
-                priceCoins: 0,
-                durationDays: 365,
-              ),
-            ));
-          }
-
-          final svipCarAsset = 'assets/svip/svip${svipLvl}_entry.webp';
-          final hasSvipCar = mergedAssets.any((a) => a.asset?.imageUrl == svipCarAsset || a.id.contains('svip$svipLvl-vehicle'));
-          if (!hasSvipCar) {
-            mergedAssets.add(UserAssetModel(
-              id: 'assigned-vehicle-svip$svipLvl-${activeUser.id}',
-              userId: activeUser.id,
-              assetId: 'assigned-asset-svip$svipLvl-vehicle',
-              isEquipped: false,
-              expiresAt: DateTime.now().add(const Duration(days: 365)),
-              isExpired: false,
-              asset: StoreItemModel(
-                id: 'assigned-asset-svip$svipLvl-vehicle',
-                name: 'SVIP $svipLvl Entry Effect',
-                categoryId: 'Cars',
-                assetType: 'VEHICLE',
-                imageUrl: svipCarAsset,
-                priceCoins: 0,
-                durationDays: 365,
-              ),
-            ));
-          }
-
+          // VIP Tag (p_1 privilege) begins at SVIP 1+
           final svipTagAsset = 'assets/svip/svip${svipLvl}_tag.png';
           final hasSvipTag = mergedAssets.any((a) => a.asset?.imageUrl == svipTagAsset || a.id.contains('svip$svipLvl-badge'));
           if (!hasSvipTag) {
@@ -288,7 +324,7 @@ class BackpackProvider extends ChangeNotifier {
               id: 'assigned-badge-svip$svipLvl-${activeUser.id}',
               userId: activeUser.id,
               assetId: 'assigned-asset-svip$svipLvl-badge',
-              isEquipped: false,
+              isEquipped: svipLvl == maxLvl,
               expiresAt: DateTime.now().add(const Duration(days: 365)),
               isExpired: false,
               asset: StoreItemModel(

@@ -22,6 +22,8 @@ export const userMerchantRouter = express.Router();
 userMerchantRouter.get('/me', authenticate, requireActiveMerchant, merchantController.getMyMerchantCenter);
 userMerchantRouter.get('/me/dashboard', authenticate, requireActiveMerchant, merchantController.getMerchantDashboard);
 userMerchantRouter.get('/ledger', authenticate, requireActiveMerchant, merchantController.getMerchantLedger);
+userMerchantRouter.get('/usd-balance', authenticate, requireActiveMerchant, merchantController.getMerchantUsdBalance);
+userMerchantRouter.post('/exchange-usd', authenticate, requireActiveMerchant, merchantController.exchangeUsdToCoins);
 userMerchantRouter.post('/recharge', authenticate, requireActiveMerchant, merchantController.executeMerchantRecharge);
 userMerchantRouter.get('/recharge/verify', authenticate, merchantController.verifyMerchantRecharge);
 
