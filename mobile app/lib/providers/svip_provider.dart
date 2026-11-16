@@ -172,11 +172,21 @@ class SVIPProvider extends ChangeNotifier {
 
   void syncWithUserWealth(int userWealthXp, {int? svipLevel}) {
     bool changed = false;
-    // Issue 24: Do NOT sync regular wealth XP to SVIP recharge points. Only sync explicit svipLevel.
-    if (svipLevel != null && svipLevel > _currentLevel) {
-      _currentLevel = svipLevel;
-      _selectedViewLevel = svipLevel;
-      changed = true;
+    // Synchronize authoritative SVIP level from profile/model
+    if (svipLevel != null && svipLevel > 0) {
+      if (svipLevel > _currentLevel || _currentLevel == 0) {
+        _currentLevel = svipLevel;
+        _selectedViewLevel = svipLevel;
+        changed = true;
+      }
+    }
+    // Ensure authoritative points match at least current level requirement
+    if (_currentLevel > 0) {
+      final curLvlData = _levels.firstWhere((l) => l.level == _currentLevel, orElse: () => _levels.first);
+      if (_currentPoints < curLvlData.requiredPoints) {
+        _currentPoints = curLvlData.requiredPoints;
+        changed = true;
+      }
     }
     if (changed) {
       _checkAutoUpgrade();
@@ -192,10 +202,19 @@ class SVIPProvider extends ChangeNotifier {
       _userId = userId;
     }
     await _loadFromStorage();
-    // Issue 24: Only sync explicit SVIP level from profile/model, never wealth XP
-    if (userSvipLevel != null && userSvipLevel > _currentLevel) {
-      _currentLevel = userSvipLevel;
-      _selectedViewLevel = userSvipLevel;
+    // Synchronize authoritative SVIP level from profile/model
+    if (userSvipLevel != null && userSvipLevel > 0) {
+      if (userSvipLevel > _currentLevel || _currentLevel == 0) {
+        _currentLevel = userSvipLevel;
+        _selectedViewLevel = userSvipLevel;
+      }
+    }
+    // Ensure authoritative points match at least current level requirement
+    if (_currentLevel > 0) {
+      final curLvlData = _levels.firstWhere((l) => l.level == _currentLevel, orElse: () => _levels.first);
+      if (_currentPoints < curLvlData.requiredPoints) {
+        _currentPoints = curLvlData.requiredPoints;
+      }
     }
     _checkAutoUpgrade();
     await _saveToStorage();
@@ -208,9 +227,13 @@ class SVIPProvider extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       final storedPoints = prefs.getInt(_pointsStorageKey) ?? 0;
       final storedLevel = prefs.getInt(_levelStorageKey) ?? 0;
-      _currentPoints = storedPoints;
-      _currentLevel = storedLevel;
-      _selectedViewLevel = storedLevel > 0 ? storedLevel : 1;
+      if (storedPoints > _currentPoints) {
+        _currentPoints = storedPoints;
+      }
+      if (storedLevel > _currentLevel) {
+        _currentLevel = storedLevel;
+        _selectedViewLevel = storedLevel;
+      }
     } catch (_) {}
   }
 

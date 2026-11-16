@@ -36,12 +36,18 @@ class _SVIPCenterScreenState extends State<SVIPCenterScreen> {
   @override
   void initState() {
     super.initState();
+    final auth = context.read<AuthProvider>();
     final svip = context.read<SVIPProvider>();
-    final initial = (svip.selectedViewLevel - 1).clamp(0, 15);
+    final user = auth.currentUser;
+    final effectiveLevel = user.svipLevel > 0 ? user.svipLevel : svip.currentLevel;
+    final initial = (effectiveLevel > 0 ? effectiveLevel - 1 : (svip.selectedViewLevel - 1)).clamp(0, 15);
     _pageController = PageController(initialPage: initial);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final user = context.read<AuthProvider>().currentUser;
-      svip.fetchSVIPData(userWealthXp: user.wealthXp);
+      svip.fetchSVIPData(
+        userId: user.id,
+        userWealthXp: user.wealthXp,
+        userSvipLevel: user.svipLevel,
+      );
       _centerTab(initial, animate: false);
     });
   }
@@ -574,17 +580,62 @@ class _SVIPCenterScreenState extends State<SVIPCenterScreen> {
 
   // ─── Header: info left, crest right ───
   Widget _buildHeader(SVIPProvider svip, user, SVIPLevel lvl) {
-    final isCurrent = svip.currentLevel == lvl.level;
-    final isUnlocked = svip.currentLevel >= lvl.level && svip.currentLevel > 0;
-    final progress = lvl.requiredPoints > 0 ? (svip.currentPoints / lvl.requiredPoints).clamp(0.0, 1.0) : 0.0;
-    final remaining = (lvl.requiredPoints - svip.currentPoints).clamp(0, lvl.requiredPoints);
+    final currentLvl = svip.currentLevel;
+    final isCompleted = currentLvl > 0 && lvl.level < currentLvl;
+    final isActive = currentLvl > 0 && lvl.level == currentLvl;
+    final isNextUpgrade = currentLvl > 0 ? (lvl.level == currentLvl + 1) : (lvl.level == 1);
 
-    final statusText = isCurrent ? 'Current Level' : (isUnlocked ? 'Unlocked' : 'Locked');
-    final hint = isCurrent
-        ? 'You need ${AppFormatters.formatNumber(remaining)} points to keep up to SVIP${lvl.level}'
-        : isUnlocked
-            ? 'You have unlocked SVIP${lvl.level}'
-            : 'You need ${AppFormatters.formatNumber(remaining)} points to reach SVIP${lvl.level}';
+    // Status label text & color
+    final String statusText;
+    final Color statusColor;
+    if (isActive) {
+      statusText = 'Active';
+      statusColor = const Color(0xFFFFD700);
+    } else if (isCompleted) {
+      statusText = 'Completed';
+      statusColor = const Color(0xFF00E676);
+    } else if (isNextUpgrade) {
+      statusText = 'Next Upgrade';
+      statusColor = const Color(0xFF29B6F6);
+    } else {
+      statusText = 'Locked';
+      statusColor = Colors.white54;
+    }
+
+    // Points display, progress, and descriptive hint
+    final double progress;
+    final String pointsDisplay;
+    final String hint;
+
+    if (isCompleted) {
+      progress = 1.0;
+      pointsDisplay = '${AppFormatters.formatNumber(lvl.requiredPoints)}/${AppFormatters.formatNumber(lvl.requiredPoints)}';
+      hint = 'Tier completed! All SVIP${lvl.level} privileges active';
+    } else if (isActive) {
+      progress = 1.0;
+      pointsDisplay = '${AppFormatters.formatNumber(svip.currentPoints)}/${AppFormatters.formatNumber(lvl.requiredPoints)}';
+      final nextLvl = svip.levels.where((l) => l.level == currentLvl + 1).firstOrNull;
+      final remainingForNext = nextLvl != null
+          ? (nextLvl.requiredPoints - svip.currentPoints).clamp(0, nextLvl.requiredPoints)
+          : 0;
+      hint = remainingForNext > 0
+          ? 'Active tier! Need ${AppFormatters.formatNumber(remainingForNext)} pts to unlock SVIP${currentLvl + 1}'
+          : 'Active tier! All SVIP${lvl.level} privileges unlocked';
+    } else if (isNextUpgrade) {
+      final prevLvlPoints = currentLvl > 0
+          ? (svip.levels.where((l) => l.level == currentLvl).firstOrNull?.requiredPoints ?? 0)
+          : 0;
+      final span = lvl.requiredPoints - prevLvlPoints;
+      final currentInSpan = (svip.currentPoints - prevLvlPoints).clamp(0, span);
+      progress = span > 0 ? (currentInSpan / span).clamp(0.0, 1.0) : 0.0;
+      final remaining = (lvl.requiredPoints - svip.currentPoints).clamp(0, lvl.requiredPoints);
+      pointsDisplay = '${AppFormatters.formatNumber(svip.currentPoints)}/${AppFormatters.formatNumber(lvl.requiredPoints)}';
+      hint = 'In Progress: Need ${AppFormatters.formatNumber(remaining)} points to upgrade to SVIP${lvl.level}';
+    } else {
+      progress = 0.0;
+      pointsDisplay = '0/${AppFormatters.formatNumber(lvl.requiredPoints)}';
+      hint = 'Locked: Reach SVIP${lvl.level - 1} to unlock this tier';
+    }
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -630,10 +681,16 @@ class _SVIPCenterScreenState extends State<SVIPCenterScreen> {
                         children: [
                           Container(height: 3, color: Colors.white24),
                           FractionallySizedBox(
-                            widthFactor: isUnlocked && !isCurrent ? 1.0 : progress,
+                            widthFactor: progress,
                             child: Container(
                               height: 3,
-                              decoration: const BoxDecoration(gradient: LinearGradient(colors: [_kGoldLight, _kGold])),
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: isCompleted
+                                      ? const [Color(0xFF00E676), Color(0xFF69F0AE)]
+                                      : const [_kGoldLight, _kGold],
+                                ),
+                              ),
                             ),
                           ),
                         ],
@@ -643,7 +700,7 @@ class _SVIPCenterScreenState extends State<SVIPCenterScreen> {
                     Row(
                       children: [
                         Text(
-                          '${AppFormatters.formatNumber(svip.currentPoints)}/${lvl.requiredPoints}',
+                          pointsDisplay,
                           style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w600),
                         ),
                         const Spacer(),
@@ -703,9 +760,12 @@ class _SVIPCenterScreenState extends State<SVIPCenterScreen> {
                     decoration: BoxDecoration(
                       color: Colors.black.withValues(alpha: 0.65),
                       borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: Colors.white12),
+                      border: Border.all(color: statusColor.withValues(alpha: 0.4)),
                     ),
-                    child: Text(statusText, style: const TextStyle(color: Colors.white70, fontSize: 10.5)),
+                    child: Text(
+                      statusText,
+                      style: TextStyle(color: statusColor, fontSize: 10.5, fontWeight: FontWeight.bold),
+                    ),
                   ),
                 ],
               ),
