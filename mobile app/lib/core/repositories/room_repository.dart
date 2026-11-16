@@ -158,6 +158,26 @@ class RoomRepository {
     await _apiClient.post('/v1/rooms/$roomId/seats/$seatIndex/leave');
   }
 
+  /// Manage mic seat action (REMOVE_FROM_MIC, LOCK, UNLOCK, MUTE, UNMUTE)
+  Future<Map<String, dynamic>> manageMicSeatAction(
+    String roomId,
+    int seatIndex, {
+    required String action,
+    String? targetUserId,
+    bool? isLocked,
+  }) async {
+    final payload = <String, dynamic>{
+      'action': action,
+      if (targetUserId != null) 'targetUserId': targetUserId,
+      if (isLocked != null) 'isLocked': isLocked,
+    };
+    final response = await _apiClient.post(
+      '/v1/rooms/$roomId/seats/$seatIndex/action',
+      data: payload,
+    );
+    return response.data?['data'] as Map<String, dynamic>? ?? {};
+  }
+
   /// Fetch Agora RTC token generated for the user's current room role
   Future<Map<String, dynamic>> getAgoraToken(String roomId) async {
     final response = await _apiClient.post('/v1/rooms/$roomId/agora-token');

@@ -82,17 +82,29 @@ class _ZePartyGamesRootState extends State<ZePartyGamesRoot> {
     final r = widget.request;
     Widget body = SessionScope(
       controller: _controller,
-      child: ValueListenableBuilder<List<_ZePartyGamesRootState>>(
-        valueListenable: _stack,
-        builder: (context, stack, child) => GamesRootActivity(active: stack.isEmpty || stack.last == this, child: child!),
-        child: Navigator(
+      child: Navigator(
         key: _navKey,
-        onGenerateRoute: (_) => MaterialPageRoute(builder: (_) => GameCenterScreen(initialGameId: r.gameId, embedded: widget.embedded)),
+        onGenerateRoute: (_) => MaterialPageRoute(
+          builder: (_) => ValueListenableBuilder<List<_ZePartyGamesRootState>>(
+            valueListenable: _stack,
+            builder: (context, stack, _) => GamesRootActivity(
+              active: stack.isEmpty || stack.last == this,
+              child: GameCenterScreen(initialGameId: r.gameId, embedded: widget.embedded),
+            ),
+          ),
+        ),
         onGenerateInitialRoutes: (_, _) => [
-          MaterialPageRoute(builder: (_) => GameCenterScreen(initialGameId: r.gameId, embedded: widget.embedded)),
+          MaterialPageRoute(
+            builder: (_) => ValueListenableBuilder<List<_ZePartyGamesRootState>>(
+              valueListenable: _stack,
+              builder: (context, stack, _) => GamesRootActivity(
+                active: stack.isEmpty || stack.last == this,
+                child: GameCenterScreen(initialGameId: r.gameId, embedded: widget.embedded),
+              ),
+            ),
+          ),
           if (r.roomId == null && widget.showInitialGameDetails) GameDetailsScreen.route(r.gameId),
         ],
-        ),
       ),
     );
     if (widget.wrapInTheme) body = Theme(data: ZpTheme.dark(), child: body);

@@ -27,10 +27,21 @@ class EmojiReactionProvider extends ChangeNotifier {
   static const int maxReactionsPerUser = 5;
   static const int maxTotalActiveReactions = 20;
 
-  void setActiveRoom(String roomId, {String? secondaryRoomId}) {
-    if (_activeRoomId != roomId || _secondaryRoomId != secondaryRoomId) {
+  final Set<String> _validRoomAliases = {};
+
+  void setActiveRoom(String roomId, {String? secondaryRoomId, List<String>? aliases}) {
+    final nextAliases = <String>{
+      if (roomId.isNotEmpty) roomId.toLowerCase().trim(),
+      if (secondaryRoomId != null && secondaryRoomId.isNotEmpty) secondaryRoomId.toLowerCase().trim(),
+      if (aliases != null) ...aliases.where((a) => a.isNotEmpty).map((a) => a.toLowerCase().trim()),
+    };
+
+    if (_activeRoomId != roomId || _secondaryRoomId != secondaryRoomId || !_validRoomAliases.containsAll(nextAliases)) {
       _activeRoomId = roomId;
       _secondaryRoomId = secondaryRoomId;
+      _validRoomAliases
+        ..clear()
+        ..addAll(nextAliases);
       _activeReactions.clear();
       _processedReactionIds.clear();
       _lastUserReactionTimestamp.clear();
@@ -39,9 +50,36 @@ class EmojiReactionProvider extends ChangeNotifier {
     }
   }
 
+  void addRoomAlias(String alias) {
+    if (alias.trim().isNotEmpty) {
+      _validRoomAliases.add(alias.toLowerCase().trim());
+    }
+  }
+
+  bool isRoomMatching(String roomId, String clientRoomId) {
+    if (_activeRoomId == null || _activeRoomId!.isEmpty) return true;
+    if (roomId.isEmpty && clientRoomId.isEmpty) return true;
+
+    String clean(String s) => s.toLowerCase().replaceAll('room:', '').trim();
+    final rNorm = clean(roomId);
+    final cNorm = clean(clientRoomId);
+
+    if (_validRoomAliases.contains(rNorm) || _validRoomAliases.contains(cNorm)) return true;
+    if (rNorm == clean(_activeRoomId!) || cNorm == clean(_activeRoomId!)) return true;
+    if (_secondaryRoomId != null && (rNorm == clean(_secondaryRoomId!) || cNorm == clean(_secondaryRoomId!))) return true;
+
+    // Substring or prefix match for short/UUID aliases
+    for (final alias in _validRoomAliases) {
+      if (alias.isNotEmpty && rNorm.isNotEmpty && (rNorm.startsWith(alias) || alias.startsWith(rNorm))) return true;
+      if (alias.isNotEmpty && cNorm.isNotEmpty && (cNorm.startsWith(alias) || alias.startsWith(cNorm))) return true;
+    }
+    return false;
+  }
+
   void clearRoom() {
     _activeRoomId = null;
     _secondaryRoomId = null;
+    _validRoomAliases.clear();
     _activeReactions.clear();
     _processedReactionIds.clear();
     _lastUserReactionTimestamp.clear();
@@ -55,13 +93,7 @@ class EmojiReactionProvider extends ChangeNotifier {
     _socketEmojiSub = _socketService.onRoomEmoji.listen((data) {
       final roomId = data['roomId']?.toString() ?? '';
       final clientRoomId = data['clientRoomId']?.toString() ?? '';
-      if (_activeRoomId != null) {
-        final matches = (roomId.isEmpty && clientRoomId.isEmpty) ||
-            roomId == _activeRoomId ||
-            clientRoomId == _activeRoomId ||
-            (_secondaryRoomId != null && (roomId == _secondaryRoomId || clientRoomId == _secondaryRoomId));
-        if (!matches) return;
-      }
+      if (!isRoomMatching(roomId, clientRoomId)) return;
 
       // Parse and receive the incoming remote emoji reaction
       try {
@@ -196,12 +228,8 @@ class EmojiReactionProvider extends ChangeNotifier {
   bool receiveReaction(EmojiReactionModel reaction) {
     if (reaction.emoji.trim().isEmpty || reaction.senderId.trim().isEmpty) return false;
 
-    if (_activeRoomId != null && reaction.roomId != _activeRoomId) {
-      if (_secondaryRoomId == null || reaction.roomId != _secondaryRoomId) {
-        if (reaction.roomId.isNotEmpty) {
-          return false;
-        }
-      }
+    if (!isRoomMatching(reaction.roomId, '')) {
+      return false;
     }
 
     if (_processedReactionIds.contains(reaction.reactionId)) {

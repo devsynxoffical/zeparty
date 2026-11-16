@@ -63,8 +63,8 @@ class _AnimatedRoomReactionState extends State<AnimatedRoomReaction> with Ticker
   }
 
   void _initStandardReaction() {
-    // 13 one-shot reactions: WebP runs for ~3.0s total
-    _completeTimer = Timer(const Duration(milliseconds: 3000), () {
+    // 13 one-shot reactions: brief 1.5s animation as required by ZP-BUG-017
+    _completeTimer = Timer(const Duration(milliseconds: 1500), () {
       if (!mounted) return;
       _fadeController.forward().then((_) {
         if (mounted) widget.onComplete();

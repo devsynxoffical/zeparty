@@ -345,7 +345,11 @@ class _MicSeatManagementSheetState extends State<MicSeatManagementSheet> {
                   subtitle: occupant.user.id == authUser.id ? 'Release your mic and return to audience' : 'Move ${occupant.user.name} off the mic back to audience',
                   onTap: () {
                     Navigator.pop(context);
-                    provider.clearMicSeat(micIndex, actor: authUser);
+                    if (occupant.user.id == authUser.id) {
+                      provider.clearMicSeat(micIndex, actor: authUser);
+                    } else {
+                      provider.removeUserFromMic(occupant.user.id, micIndex);
+                    }
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text(occupant.user.id == authUser.id ? 'Released $micLabel' : '🚫 ${occupant.user.name} was moved to audience'),

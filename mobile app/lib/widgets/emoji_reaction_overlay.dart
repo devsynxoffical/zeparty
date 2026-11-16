@@ -92,12 +92,12 @@ class EmojiReactionOverlay extends StatelessWidget {
 
               final double reactionSize = isLiveRoom
                   ? (size.width * 0.35).clamp(120.0, 140.0)
-                  : 84.0;
+                  : 28.0;
 
-              // In Audio Party Room, render floating above mic seat or centered for unseated audience
+              // In Audio Party Room, render compact reaction centered over sender's mic avatar
               final bool isSeatAnchored = !isLiveRoom && startPos != liveStageCenter;
               final double topPos = isSeatAnchored
-                  ? (startPos.dy - reactionSize * 0.85)
+                  ? (startPos.dy - (reactionSize / 2))
                   : (startPos.dy - (reactionSize / 2));
 
               return Positioned(

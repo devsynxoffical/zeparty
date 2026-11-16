@@ -44,8 +44,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     super.dispose();
   }
 
+  int _lastTabIndex = 1;
+
   void _onTabChanged() {
-    setState(() {});
+    if (_tabController.index != _lastTabIndex) {
+      _lastTabIndex = _tabController.index;
+      setState(() {});
+    }
   }
 
   @override

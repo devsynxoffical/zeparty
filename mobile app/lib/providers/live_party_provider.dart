@@ -75,11 +75,13 @@ class LivePartyProvider extends ChangeNotifier {
       final uid = _userIdToAgoraUid.remove(cleanUserId);
       if (uid != null) {
         _agoraUidToUserId.remove(uid);
+        _agoraService.muteRemoteAudio(uid, true);
       }
     }
     if (agoraUidRaw != null) {
       final parsed = parseAgoraUid(agoraUidRaw);
       if (parsed != null) {
+        _agoraService.muteRemoteAudio(parsed, true);
         final uId = _agoraUidToUserId.remove(parsed);
         if (uId != null) {
           _userIdToAgoraUid.remove(uId);
@@ -260,6 +262,7 @@ class LivePartyProvider extends ChangeNotifier {
   StreamSubscription? _socketPkActiveSub;
   StreamSubscription? _socketConnectionSub;
   StreamSubscription? _socketUserFrameSub;
+  StreamSubscription? _socketUserRemovedFromMicSub;
 
   bool get isSocketConnected => _socketService.isConnected;
 
@@ -1746,7 +1749,12 @@ class LivePartyProvider extends ChangeNotifier {
 
         final isHostUser = leftUserId == _activeRoom?.host.id || leftUserId == _activeRoom?.creatorUserId;
         if (isHostUser) {
-          // Host left or is away: vacate Host Seat 0, but keep Party Room open for remaining users
+          // Host left or is away: clear reconnect banner, mute remote audio, vacate Host Seat 0
+          _isHostAbsent = false;
+          final hostAgoraUid = parseAgoraUid(_activeRoom?.host.id);
+          if (hostAgoraUid != null) {
+            _agoraService.muteRemoteAudio(hostAgoraUid, true);
+          }
           for (int i = 0; i < _participants.length; i++) {
             if (_participants[i].role == ParticipantRole.host || _participants[i].seatNumber == 0) {
               _participants[i] = _participants[i].copyWith(
@@ -1938,7 +1946,20 @@ class LivePartyProvider extends ChangeNotifier {
       if (!matchesCurrentRoom(data)) return;
       try {
         final seatIndex = (data['seatIndex'] is num) ? (data['seatIndex'] as num).toInt() : int.tryParse(data['seatIndex']?.toString() ?? '');
-        final userId = data['userId']?.toString() ?? data['releasedByUserId']?.toString();
+        final targetUserId = data['targetUserId']?.toString();
+        final isModeration = data['isModerationAction'] == true;
+        // If it's a moderation removal, userId is targetUserId (never the host/actor who initiated it)
+        final userId = targetUserId ?? (isModeration ? null : (data['userId']?.toString() ?? data['releasedByUserId']?.toString()));
+
+        // Mute remote audio for the vacated user immediately
+        final vacatedUser = targetUserId ?? userId;
+        if (vacatedUser != null && vacatedUser.isNotEmpty) {
+          final agoraUid = parseAgoraUid(vacatedUser);
+          if (agoraUid != null) {
+            _agoraService.muteRemoteAudio(agoraUid, true);
+          }
+        }
+
         int pIdx = -1;
         if (seatIndex != null) {
           pIdx = _participants.indexWhere((p) => p.seatNumber == seatIndex);
@@ -1958,6 +1979,11 @@ class LivePartyProvider extends ChangeNotifier {
               occupant.user.id == _activeRoom?.creatorUserId ||
               (isHost && occupant.user.id == currentUser.id);
 
+          // Never demote or clear the host seat unless the host explicitly vacated
+          if (isModeration && isHostOccupant && targetUserId != occupant.user.id) {
+            return;
+          }
+
           _participants[pIdx] = occupant.copyWith(
             clearSeat: true,
             role: isHostOccupant ? ParticipantRole.host : ParticipantRole.listener,
@@ -1969,12 +1995,13 @@ class LivePartyProvider extends ChangeNotifier {
           }
 
           if (occupant.user.id == currentUser.id) {
+            _isLocalSelfMuted = false;
             _agoraService.muteLocalAudio(true);
+            _agoraService.stopPublishingAudio();
             _agoraService.switchRole(isHost: false);
           }
-          // Left mic message removed to keep chat clean
-        } else if (seatIndex != null) {
-          // Vacate any participant marked on seatIndex
+        } else if (seatIndex != null && seatIndex != 0) {
+          // Vacate any participant marked on seatIndex (never seat 0 on moderation)
           for (int i = 0; i < _participants.length; i++) {
             if (_participants[i].seatNumber == seatIndex) {
               _participants[i] = _participants[i].copyWith(
@@ -2682,7 +2709,15 @@ class LivePartyProvider extends ChangeNotifier {
     _socketRoomHostAbsentSub?.cancel();
     _socketRoomHostAbsentSub = _socketService.onRoomHostAbsent.listen((data) {
       if (!matchesCurrentRoom(data)) return;
-      _isHostAbsent = true;
+      // Do not show reconnect banner for intentional leave or when room remains open for members
+      final roomStaysOpen = data['roomStaysOpen'] == true;
+      final hostLeft = data['reason'] == 'HOST_AWAY' || data['reason'] == 'HOST_LEFT';
+      final isIntentional = data['isIntentional'] == true || data['intentional'] == true;
+      if (roomStaysOpen || hostLeft || isIntentional) {
+        _isHostAbsent = false;
+      } else {
+        _isHostAbsent = true;
+      }
       notifyListeners();
     });
 
@@ -2690,6 +2725,54 @@ class LivePartyProvider extends ChangeNotifier {
     _socketRoomHostReturnedSub = _socketService.onRoomHostReturned.listen((data) {
       if (!matchesCurrentRoom(data)) return;
       _isHostAbsent = false;
+      notifyListeners();
+    });
+
+    // Targeted Mic Seat Removal Stream (ZP-BUG-018)
+    _socketUserRemovedFromMicSub?.cancel();
+    _socketUserRemovedFromMicSub = _socketService.onUserRemovedFromMic.listen((data) {
+      if (!matchesCurrentRoom(data)) return;
+      final targetUserId = data['targetUserId']?.toString();
+      final seatIndex = (data['seatIndex'] is num) ? (data['seatIndex'] as num).toInt() : int.tryParse(data['seatIndex']?.toString() ?? '');
+
+      if (targetUserId == currentUser.id) {
+        // Current user was moved off mic: immediately stop publishing local audio and switch to audience role
+        _isLocalSelfMuted = false;
+        _agoraService.muteLocalAudio(true);
+        _agoraService.stopPublishingAudio();
+        _agoraService.switchRole(isHost: false);
+        sendSystemMessage('🚫 You have been moved to audience.');
+      } else if (targetUserId != null) {
+        final targetAgora = parseAgoraUid(targetUserId);
+        if (targetAgora != null) {
+          _agoraService.muteRemoteAudio(targetAgora, true);
+        }
+      }
+
+      if (seatIndex != null && seatIndex != 0) {
+        _seatVoiceLevels[seatIndex] = 0.0;
+        for (int i = 0; i < _participants.length; i++) {
+          if (_participants[i].seatNumber == seatIndex) {
+            _participants[i] = _participants[i].copyWith(
+              clearSeat: true,
+              role: ParticipantRole.listener,
+              micStatus: MicStatus.muted,
+            );
+          }
+        }
+      } else if (targetUserId != null) {
+        final pIdx = _participants.indexWhere((p) => p.user.id == targetUserId);
+        if (pIdx != -1) {
+          final p = _participants[pIdx];
+          if (p.seatNumber != null) _seatVoiceLevels[p.seatNumber!] = 0.0;
+          _participants[pIdx] = p.copyWith(
+            clearSeat: true,
+            role: ParticipantRole.listener,
+            micStatus: MicStatus.muted,
+          );
+        }
+      }
+      _deduplicateParticipants();
       notifyListeners();
     });
 
@@ -3029,6 +3112,12 @@ class LivePartyProvider extends ChangeNotifier {
     _sessionGeneration++;
     final roomId = _activeRoom?.id;
     _activeRoom = null;
+    _isHostAbsent = false;
+
+    // Immediately stop publishing audio synchronously to prevent audio persisting after leaving
+    _agoraService.muteLocalAudio(true);
+    _agoraService.stopPublishingAudio();
+
     if (roomId != null) {
       try {
         _socketService.leaveRoom(roomId);
@@ -3068,6 +3157,7 @@ class LivePartyProvider extends ChangeNotifier {
     _socketRoomLockSub?.cancel();
     _socketRoomHostAbsentSub?.cancel();
     _socketRoomHostReturnedSub?.cancel();
+    _socketUserRemovedFromMicSub?.cancel();
     _socketPkActiveSub?.cancel();
     _socketFeedClearedSub?.cancel();
     _socketDetailsUpdatedSub?.cancel();
@@ -4605,10 +4695,53 @@ class LivePartyProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> removeUserFromMic(String targetUserId, int seatIndex) async {
+    if (_activeRoom == null) return;
+    try {
+      // 1. Authoritative REST call
+      await _roomRepository.manageMicSeatAction(
+        _activeRoom!.id,
+        seatIndex,
+        action: 'REMOVE_FROM_MIC',
+        targetUserId: targetUserId,
+      );
+
+      // 2. Realtime socket event
+      _socketService.emitRemoveFromMic(_activeRoom!.id, seatIndex, targetUserId);
+
+      // 3. Update local state strictly for target user and seat (never host seat 0)
+      if (seatIndex != 0) {
+        _seatVoiceLevels[seatIndex] = 0.0;
+        for (int i = 0; i < _participants.length; i++) {
+          if (_participants[i].seatNumber == seatIndex || _participants[i].user.id == targetUserId) {
+            _participants[i] = _participants[i].copyWith(
+              clearSeat: true,
+              role: ParticipantRole.listener,
+              micStatus: MicStatus.muted,
+            );
+          }
+        }
+      }
+
+      // 4. Mute remote audio track for target user immediately
+      final targetAgora = parseAgoraUid(targetUserId);
+      if (targetAgora != null) {
+        _agoraService.muteRemoteAudio(targetAgora, true);
+      }
+
+      _deduplicateParticipants();
+      final seatName = formatSeatLabel(seatIndex);
+      sendSystemMessage('🚫 Participant was moved off $seatName.');
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[LivePartyProvider] removeUserFromMic error: $e');
+    }
+  }
+
   void kickFromSeat(String userId) {
     final seatIdx = _participants.where((p) => p.user.id == userId && p.seatNumber != null).firstOrNull?.seatNumber;
-    if (seatIdx != null && _currentUser != null) {
-      clearMicSeat(seatIdx, actor: _currentUser!);
+    if (seatIdx != null) {
+      removeUserFromMic(userId, seatIdx);
     }
   }
 

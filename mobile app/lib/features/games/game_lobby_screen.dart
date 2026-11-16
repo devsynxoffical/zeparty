@@ -87,7 +87,6 @@ class _GameLobbyScreenState extends State<GameLobbyScreen> with AutomaticKeepAli
             }
           },
           child: ZePartyGamesRoot(
-            key: ValueKey('games_root_${session.identity.userId}'),
             navigatorKey: _gamesNavKey,
             showInitialGameDetails: false,
             embedded: true,

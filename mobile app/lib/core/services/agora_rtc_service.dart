@@ -338,10 +338,32 @@ class AgoraRtcService {
     }
   }
 
+  Future<void> stopPublishingAudio() async {
+    _lastBroadcasterRole = false;
+    _lastMutedAudio = true;
+    try {
+      await _engine?.muteLocalAudioStream(true);
+      await _engine?.updateChannelMediaOptions(
+        const ChannelMediaOptions(
+          publishMicrophoneTrack: false,
+          clientRoleType: ClientRoleType.clientRoleAudience,
+        ),
+      );
+      await _engine?.setClientRole(role: ClientRoleType.clientRoleAudience);
+    } catch (_) {}
+  }
+
   Future<void> leaveChannel() async {
     _lastBroadcasterRole = false;
     _lastMutedAudio = true;
     try {
+      await _engine?.muteLocalAudioStream(true);
+      await _engine?.updateChannelMediaOptions(
+        const ChannelMediaOptions(
+          publishMicrophoneTrack: false,
+          clientRoleType: ClientRoleType.clientRoleAudience,
+        ),
+      );
       _remoteUids.clear();
       _remoteUsersController.add(Set.from(_remoteUids));
       await _engine?.stopAudioMixing();
@@ -349,6 +371,12 @@ class AgoraRtcService {
       await _engine?.leaveChannel();
     } catch (_) {}
     _currentChannel = null;
+  }
+
+  Future<void> muteRemoteAudio(int uid, bool muted) async {
+    try {
+      await _engine?.muteRemoteAudioStream(uid: uid, mute: muted);
+    } catch (_) {}
   }
 
   Future<void> muteAllRemoteAudio(bool muted) async {

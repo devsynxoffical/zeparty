@@ -114,6 +114,7 @@ class SocketService {
   final _roomLockUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
   final _roomHostAbsentController = StreamController<Map<String, dynamic>>.broadcast();
   final _roomHostReturnedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _roomUserRemovedFromMicController = StreamController<Map<String, dynamic>>.broadcast();
   final _roomBackgroundUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
   final _roomPresenceSyncController = StreamController<Map<String, dynamic>>.broadcast();
   final _roomStageSyncController = StreamController<Map<String, dynamic>>.broadcast();
@@ -293,6 +294,7 @@ class SocketService {
   Stream<Map<String, dynamic>> get onRoomLockUpdated => _roomLockUpdatedController.stream;
   Stream<Map<String, dynamic>> get onRoomHostAbsent => _roomHostAbsentController.stream;
   Stream<Map<String, dynamic>> get onRoomHostReturned => _roomHostReturnedController.stream;
+  Stream<Map<String, dynamic>> get onUserRemovedFromMic => _roomUserRemovedFromMicController.stream;
   Stream<Map<String, dynamic>> get onRoomBackgroundUpdated => _roomBackgroundUpdatedController.stream;
   Stream<Map<String, dynamic>> get onRoomPresenceSync => _roomPresenceSyncController.stream;
   Stream<Map<String, dynamic>> get onRoomStageSync => _roomStageSyncController.stream;
@@ -1091,6 +1093,16 @@ class SocketService {
       if (data != null) _roomHostReturnedController.add(safeMap(data));
     });
 
+    // Targeted Mic Seat Removal (ZP-BUG-018)
+    _socket!.off('room:removed_from_mic');
+    _socket!.on('room:removed_from_mic', (data) {
+      if (data != null) _roomUserRemovedFromMicController.add(safeMap(data));
+    });
+    _socket!.off('removed_from_mic');
+    _socket!.on('removed_from_mic', (data) {
+      if (data != null) _roomUserRemovedFromMicController.add(safeMap(data));
+    });
+
     // Social Events
     _socket!.on('post:created', (data) {
       if (data is Map) _postCreatedController.add(Map<String, dynamic>.from(data));
@@ -1452,6 +1464,22 @@ class SocketService {
       _logDiag('EMIT_SEAT_LEAVE', 'room: $roomId, seatIndex: $seatIndex');
     } else {
       _pendingSeatQueue.add({'action': 'leave', 'data': payload});
+    }
+  }
+
+  /// Targeted removal of a specific user from mic to audience (ZP-BUG-018)
+  void emitRemoveFromMic(String roomId, int seatIndex, String targetUserId) {
+    final payload = {
+      'roomId': roomId,
+      'seatIndex': seatIndex,
+      'targetUserId': targetUserId,
+      'action': 'REMOVE_FROM_MIC',
+    };
+    if (_socket != null && _socket!.connected) {
+      _socket!.emit('seat:remove_from_mic', payload);
+      _socket!.emit('room:remove_from_mic', payload);
+      _socket!.emit('remove_from_mic', payload);
+      _logDiag('EMIT_REMOVE_FROM_MIC', 'room: $roomId, seatIndex: $seatIndex, target: $targetUserId');
     }
   }
 

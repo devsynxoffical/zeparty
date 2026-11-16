@@ -1105,7 +1105,7 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
     if (level < 3) return null;
     final clamped = level.clamp(3, 16);
     if (clamped >= 3 && clamped <= 5) {
-      return 'assets/svip/svip-$clamped_profilecard.webp';
+      return 'assets/svip/svip-${clamped}_profilecard.webp';
     }
     return 'assets/svip/svip${clamped}_profilecard.webp';
   }
@@ -1185,7 +1185,7 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
     UserModel user,
     int seatIndex,
   ) {
-    liveProvider.kickFromSeat(user.id);
+    liveProvider.removeUserFromMic(user.id, seatIndex);
     Navigator.pop(context);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
