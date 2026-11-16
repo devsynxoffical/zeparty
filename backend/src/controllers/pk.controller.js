@@ -46,8 +46,38 @@ export async function discoverOpponent(req, res, next) {
  */
 export async function sendInvitation(req, res, next) {
   try {
-    const { fromRoomId, targetRoomId, targetHostUserId, durationSeconds } = req.body;
+    const {
+      fromRoomId,
+      targetRoomId,
+      targetHostUserId,
+      durationSeconds,
+      hostRoomId,
+      opponentUserId,
+      durationMinutes,
+      roomId,
+    } = req.body;
     const callerUserId = req.auth?.userId || req.user?.id;
+
+    // Direct Co-Host to PK transition triggered from client (ZP-BUG-024)
+    const effectiveRoomId = hostRoomId || (fromRoomId && fromRoomId === targetRoomId ? fromRoomId : null) || roomId;
+    const effectiveOpponentId = opponentUserId || (targetHostUserId && (!fromRoomId || fromRoomId === targetRoomId) ? targetHostUserId : null);
+
+    if (effectiveRoomId && effectiveOpponentId && (!fromRoomId || !targetRoomId || fromRoomId === targetRoomId)) {
+      const parsedDuration = (Number(durationMinutes) ? Number(durationMinutes) * 60 : null) || Number(durationSeconds) || 300;
+      const transitionResult = await pkService.transitionCoHostToPK({
+        roomId: effectiveRoomId,
+        hostUserId: callerUserId,
+        opponentUserId: effectiveOpponentId,
+        durationSeconds: parsedDuration,
+        callerUserId,
+      });
+
+      return res.status(201).json({
+        success: true,
+        data: transitionResult.data,
+        message: 'PK Match started successfully from Co-Host.',
+      });
+    }
 
     if (!fromRoomId || !targetRoomId || !targetHostUserId) {
       return res.status(400).json({

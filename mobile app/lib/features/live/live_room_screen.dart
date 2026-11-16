@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/auth_guard.dart';
@@ -178,8 +179,12 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
             ),
             onPressed: () async {
               _isCoHostInviteDialogShown = false;
-              Navigator.pop(ctx);
               final myUser = context.read<AuthProvider>().currentUser;
+              LiveProvider? liveProv;
+              try {
+                liveProv = context.read<LiveProvider>();
+              } catch (_) {}
+              Navigator.pop(ctx);
               SocketService.instance.respondCoHostInvite(
                 roomId: widget.room.id,
                 invitationId: invitation.id,
@@ -193,10 +198,26 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
                 );
               } catch (_) {}
 
+              // ZP-BUG-022: Verify camera permission before video publishing
+              bool canPublishVideo = false;
               try {
-                await AgoraRtcService.instance.switchRole(isHost: true);
-                await AgoraRtcService.instance.muteLocalAudio(false);
-                await AgoraRtcService.instance.muteLocalVideo(false);
+                final camStatus = await Permission.camera.request();
+                canPublishVideo = camStatus.isGranted;
+              } catch (e) {
+                debugPrint('[LiveRoom] Camera permission check error: $e');
+              }
+
+              // Respect moderation audio mute state
+              final isMutedByMod = liveProv?.isRoomMuted == true;
+
+              try {
+                await AgoraRtcService.instance.switchRole(isHost: true, isVideo: canPublishVideo);
+                if (isMutedByMod) {
+                  await AgoraRtcService.instance.muteLocalAudio(true);
+                } else {
+                  await AgoraRtcService.instance.muteLocalAudio(false);
+                }
+                await AgoraRtcService.instance.muteLocalVideo(!canPublishVideo);
               } catch (e) {
                 debugPrint('[LiveRoom] Agora co-host switchRole error: $e');
               }
@@ -205,12 +226,28 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
                 setState(() {
                   _coHostUser = myUser;
                 });
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('🎉 You are now live on stage as Co-Host!'),
-                    backgroundColor: Colors.green,
-                  ),
-                );
+                if (!canPublishVideo) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Joined stage with audio only. Camera permission was not granted.'),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                } else if (isMutedByMod) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('🎉 You are now on stage as Co-Host (Microphone muted by room moderation).'),
+                      backgroundColor: Colors.blueGrey,
+                    ),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('🎉 You are now live on stage as Co-Host!'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
               }
             },
             child: const Text(
@@ -1369,6 +1406,11 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
             : 0);
 
     // Identify whether current viewer belongs to Room A or Room B
+    // In single-room co-host PK, roomAId == roomBId and both hosts are in the same Agora channel!
+    // Strict check (ZP-BUG-024): Require both room IDs present and equal; do not classify missing roomBId as single-room PK.
+    final isSingleRoomPk = pk.roomAId.isNotEmpty &&
+        pk.roomBId.isNotEmpty &&
+        (pk.roomAId == pk.roomBId);
     final isRoomA = !isHostB && (
         isHostA ||
         (activeRoom.id == pk.roomAId) ||
@@ -1387,20 +1429,23 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
         pk.agoraRelay?.hostBUid ?? AgoraRtcService.deriveUid(pk.hostB.id);
 
     // Opponent room and channel resolution
+    // In single-room PK, channel for both hosts is the same current live room channel!
+    final mainRoomChannel = activeRoom.agoraChannelName ?? activeRoom.id;
     final opponentRoomId = isRoomA ? pk.roomBId : pk.roomAId;
-    final opponentChannel =
-        agoraService.pkOpponentChannel ??
-        (isRoomA
-            ? (pk.agoraRelay?.channelB.isNotEmpty == true
-                  ? pk.agoraRelay!.channelB
-                  : (opponentRoomId.startsWith('room_')
-                        ? opponentRoomId
-                        : 'room_${opponentRoomId.replaceAll('-', '')}'))
-            : (pk.agoraRelay?.channelA.isNotEmpty == true
-                  ? pk.agoraRelay!.channelA
-                  : (opponentRoomId.startsWith('room_')
-                        ? opponentRoomId
-                        : 'room_${opponentRoomId.replaceAll('-', '')}')));
+    final opponentChannel = isSingleRoomPk
+        ? mainRoomChannel
+        : (agoraService.pkOpponentChannel ??
+            (isRoomA
+                ? (pk.agoraRelay?.channelB.isNotEmpty == true
+                      ? pk.agoraRelay!.channelB
+                      : (opponentRoomId.startsWith('room_')
+                            ? opponentRoomId
+                            : 'room_${opponentRoomId.replaceAll('-', '')}'))
+                : (pk.agoraRelay?.channelA.isNotEmpty == true
+                      ? pk.agoraRelay!.channelA
+                      : (opponentRoomId.startsWith('room_')
+                            ? opponentRoomId
+                            : 'room_${opponentRoomId.replaceAll('-', '')}'))));
 
     final remoteUids = agoraService.remoteUids.toList();
     final fallbackRemoteUid =

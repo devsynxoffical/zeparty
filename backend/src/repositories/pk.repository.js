@@ -241,6 +241,76 @@ export class PKRepository {
   }
 
   /**
+   * Directly creates and starts an active single-room PK Match between the room host and co-host.
+   * Seamlessly transitions from co-hosting to PK in the same live session.
+   */
+  async createDirectSingleRoomPKMatch({
+    roomId,
+    hostAUserId,
+    hostBUserId,
+    durationSeconds = 300,
+    configSnapshot = {},
+  }, db = prisma) {
+    return db.$transaction(async (tx) => {
+      // Check if room is already in an active or pending match
+      const existingMatch = await tx.pKMatch.findFirst({
+        where: {
+          status: { in: ['PENDING', 'PREPARING', 'COUNTDOWN', 'ACTIVE'] },
+          OR: [{ roomAId: roomId }, { roomBId: roomId }],
+        },
+      });
+      if (existingMatch) {
+        // If already active with the same hosts, return existing
+        return existingMatch;
+      }
+
+      const now = new Date();
+      const endAt = new Date(now.getTime() + durationSeconds * 1000);
+
+      const room = await tx.room.findUnique({
+        where: { id: roomId },
+        select: { id: true, roomType: true, category: true, creatorUserId: true },
+      });
+
+      const match = await tx.pKMatch.create({
+        data: {
+          roomAId: roomId,
+          roomBId: roomId,
+          hostAUserId,
+          hostBUserId,
+          roomType: room?.roomType || 'LIVE_VIDEO',
+          region: room?.category || 'GLOBAL',
+          operatorAUserId: hostAUserId,
+          operatorBUserId: hostBUserId,
+          status: 'ACTIVE',
+          readyA: true,
+          readyB: true,
+          mediaPreparedA: true,
+          mediaPreparedB: true,
+          startAt: now,
+          endAt,
+          durationSeconds,
+          stateVersion: 1,
+          configSnapshotJson: configSnapshot,
+        },
+      });
+
+      await tx.pKLifecycleAudit.create({
+        data: {
+          matchId: match.id,
+          action: 'DIRECT_COHOST_PK_STARTED',
+          actorUserId: hostAUserId,
+          fromStatus: 'CO_HOSTING',
+          toStatus: 'ACTIVE',
+          metadataJson: { roomId, hostAUserId, hostBUserId, durationSeconds },
+        },
+      });
+
+      return match;
+    }, TX_CONFIG);
+  }
+
+  /**
    * Create an invitation and initial PKMatch in PENDING status.
    */
   async createInvitationAndMatch({
@@ -696,8 +766,20 @@ export class PKRepository {
         return { match, contribution: existing, duplicate: true };
       }
 
-      const isSideA = match.hostAUserId === recipientUserId || (roomId && match.roomAId === roomId);
-      const side = isSideA ? 'A' : 'B';
+      // Resolve side: if recipient is explicitly hostBUserId, it's side B;
+      // if recipient is hostAUserId, it's side A.
+      // If room-based and both rooms are the same (single-room co-host PK),
+      // recipientUserId is authoritative.
+      let side = 'A';
+      if (match.hostBUserId === recipientUserId) {
+        side = 'B';
+      } else if (match.hostAUserId === recipientUserId) {
+        side = 'A';
+      } else if (roomId && match.roomBId === roomId && match.roomAId !== roomId) {
+        side = 'B';
+      } else if (roomId && match.roomAId === roomId) {
+        side = 'A';
+      }
       const scoreField = side === 'A' ? 'scoreA' : 'scoreB';
 
       const contribution = await tx.pKGiftContribution.create({

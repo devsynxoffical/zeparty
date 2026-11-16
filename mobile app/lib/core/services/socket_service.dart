@@ -90,6 +90,7 @@ class SocketService {
   final _viewerCountController = StreamController<Map<String, dynamic>>.broadcast();
   final _seatOccupiedController = StreamController<Map<String, dynamic>>.broadcast();
   final _seatReleasedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _seatTransferredController = StreamController<Map<String, dynamic>>.broadcast();
   final _roomCreatedController = StreamController<Map<String, dynamic>>.broadcast();
   final _roomClosedController = StreamController<Map<String, dynamic>>.broadcast();
   final _giftSentController = StreamController<Map<String, dynamic>>.broadcast();
@@ -267,6 +268,7 @@ class SocketService {
   Stream<Map<String, dynamic>> get onViewerCountChanged => _viewerCountController.stream;
   Stream<Map<String, dynamic>> get onSeatOccupied => _seatOccupiedController.stream;
   Stream<Map<String, dynamic>> get onSeatReleased => _seatReleasedController.stream;
+  Stream<Map<String, dynamic>> get onSeatTransferred => _seatTransferredController.stream;
   Stream<Map<String, dynamic>> get onRoomCreated => _roomCreatedController.stream;
   Stream<Map<String, dynamic>> get onRoomClosed => _roomClosedController.stream;
   Stream<Map<String, dynamic>> get onGiftSent => _giftSentController.stream;
@@ -306,6 +308,7 @@ class SocketService {
   Stream<Map<String, dynamic>> get viewerCountStream => onViewerCountChanged;
   Stream<Map<String, dynamic>> get seatOccupiedStream => onSeatOccupied;
   Stream<Map<String, dynamic>> get seatReleasedStream => onSeatReleased;
+  Stream<Map<String, dynamic>> get seatTransferredStream => onSeatTransferred;
   Stream<Map<String, dynamic>> get roomClosedStream => onRoomClosed;
   Stream<Map<String, dynamic>> get giftSentStream => onGiftSent;
   Stream<Map<String, dynamic>> get roomChatMessageStream => onRoomChatMessage;
@@ -679,6 +682,12 @@ class SocketService {
     _socket!.on('room:seat_left', handleSeatReleased);
     _socket!.on('room_seat_left', handleSeatReleased);
     _socket!.on('mic:left', handleSeatReleased);
+
+    void handleSeatTransferred(dynamic data) {
+      if (data != null) _seatTransferredController.add(safeMap(data));
+    }
+    _socket!.on('room:seat_transferred', handleSeatTransferred);
+    _socket!.on('seat_transferred', handleSeatTransferred);
     void handleRoomCreated(dynamic data) {
       if (data != null) _roomCreatedController.add(safeMap(data));
     }

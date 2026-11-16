@@ -104,6 +104,17 @@ class LivePartyProvider extends ChangeNotifier {
             registerAgoraUidMapping(parsedUid, user.id);
           }
         }
+      } else if (v is num || int.tryParse(v.toString()) != null) {
+        // Support format: { "userId": 1234567 }
+        final parsedUid = (v is num) ? v.toInt() : int.tryParse(v.toString());
+        final userIdStr = k.toString();
+        if (parsedUid != null && parsedUid > 0 && userIdStr.isNotEmpty) {
+          registerAgoraUidMapping(parsedUid, userIdStr);
+          final existing = _participants.where((p) => p.user.id == userIdStr).firstOrNull;
+          if (existing != null) {
+            _agoraUidToUser[parsedUid] = existing.user;
+          }
+        }
       }
     });
   }
@@ -234,6 +245,7 @@ class LivePartyProvider extends ChangeNotifier {
   StreamSubscription? _socketUserLeftSub;
   StreamSubscription? _socketSeatOccupiedSub;
   StreamSubscription? _socketSeatReleasedSub;
+  StreamSubscription? _socketSeatTransferredSub;
   StreamSubscription? _socketViewerCountSub;
   StreamSubscription? _socketRoomClosedSub;
   StreamSubscription? _socketGiftSentSub;
@@ -1898,12 +1910,22 @@ class LivePartyProvider extends ChangeNotifier {
             currentRole: currentRole,
             isSeated: true,
           );
+          final wasAlreadySeated = pIdx != -1 && _participants[pIdx].seatNumber != null;
+          final isTransfer = data['vacatedSeatIndex'] != null ||
+              data['previousSeatIndex'] != null ||
+              data['fromSeatIndex'] != null ||
+              data['isTransfer'] == true ||
+              wasAlreadySeated;
+
           if (pIdx != -1) {
+            final existingMic = isTransfer
+                ? _participants[pIdx].micStatus
+                : (data['isMuted'] == true || data['isMutedByModerator'] == true ? MicStatus.muted : MicStatus.on);
             _participants[pIdx] = _participants[pIdx].copyWith(
               user: occupantUser,
               seatNumber: seatIndex,
               role: resolvedRole,
-              micStatus: MicStatus.on,
+              micStatus: existingMic,
               agoraUid: effectiveSeatAgoraUid,
             );
           } else {
@@ -1911,7 +1933,7 @@ class LivePartyProvider extends ChangeNotifier {
               user: occupantUser,
               role: resolvedRole,
               seatNumber: seatIndex,
-              micStatus: MicStatus.on,
+              micStatus: (data['isMuted'] == true || data['isMutedByModerator'] == true) ? MicStatus.muted : MicStatus.on,
               joinedAt: DateTime.now(),
               agoraUid: effectiveSeatAgoraUid,
             ));
@@ -1921,7 +1943,9 @@ class LivePartyProvider extends ChangeNotifier {
 
           if (occupantUser.id == currentUser.id) {
             _agoraService.switchRole(isHost: true);
-            _agoraService.muteLocalAudio(false);
+            if (!isTransfer) {
+              _agoraService.muteLocalAudio(false);
+            }
           }
 
           // Mic joining messages removed to keep chat clean and focused
@@ -1932,24 +1956,30 @@ class LivePartyProvider extends ChangeNotifier {
       }
     });
 
-    // 6. Seat Released Stream
+    // 6. Seat Released Stream (ZP-BUG-019)
     _socketSeatReleasedSub?.cancel();
     _socketSeatReleasedSub = _socketService.seatReleasedStream.listen((data) {
       if (!matchesCurrentRoom(data)) return;
       try {
         final seatIndex = (data['seatIndex'] is num) ? (data['seatIndex'] as num).toInt() : int.tryParse(data['seatIndex']?.toString() ?? '');
-        final userId = data['userId']?.toString() ?? data['releasedByUserId']?.toString();
+        // Safe target resolution: Prefer target identity. Never use releasedByUserId (operator/moderator identity).
+        final targetUserId = data['userId']?.toString() ??
+            data['previousUserId']?.toString() ??
+            data['kickedUserId']?.toString() ??
+            data['targetUserId']?.toString();
+
+        if (targetUserId == null || targetUserId.isEmpty) {
+          debugPrint('[LivePartyProvider] SeatReleased: Missing reliable targetUserId (releasedByUserId is operator, not target). Triggering authoritative room state refresh.');
+          _syncRoomStateOnReconnect();
+          return;
+        }
+
         int pIdx = -1;
-        if (seatIndex != null) {
-          pIdx = _participants.indexWhere((p) => p.seatNumber == seatIndex);
-        }
-        if (pIdx == -1 && userId != null) {
-          final uClean = userId.toLowerCase().replaceFirst(RegExp(r'^user_'), '');
-          pIdx = _participants.indexWhere((p) =>
-              p.user.id == userId ||
-              p.user.id.toLowerCase() == userId.toLowerCase() ||
-              p.user.id.toLowerCase().replaceFirst(RegExp(r'^user_'), '') == uClean);
-        }
+        final uClean = targetUserId.toLowerCase().replaceFirst(RegExp(r'^user_'), '');
+        pIdx = _participants.indexWhere((p) =>
+            p.user.id == targetUserId ||
+            p.user.id.toLowerCase() == targetUserId.toLowerCase() ||
+            p.user.id.toLowerCase().replaceFirst(RegExp(r'^user_'), '') == uClean);
 
         if (pIdx != -1) {
           final occupant = _participants[pIdx];
@@ -1967,24 +1997,23 @@ class LivePartyProvider extends ChangeNotifier {
           if (occupant.seatNumber != null) {
             _seatVoiceLevels[occupant.seatNumber!] = 0.0;
           }
+          if (seatIndex != null) {
+            _seatVoiceLevels[seatIndex] = 0.0;
+          }
 
           if (occupant.user.id == currentUser.id) {
             _agoraService.muteLocalAudio(true);
             _agoraService.switchRole(isHost: false);
           }
-          // Left mic message removed to keep chat clean
-        } else if (seatIndex != null) {
-          // Vacate any participant marked on seatIndex
-          for (int i = 0; i < _participants.length; i++) {
-            if (_participants[i].seatNumber == seatIndex) {
-              _participants[i] = _participants[i].copyWith(
-                clearSeat: true,
-                role: _participants[i].role == ParticipantRole.host ? ParticipantRole.host : ParticipantRole.listener,
-                micStatus: MicStatus.muted,
-              );
-            }
+        } else {
+          // Target participant was not found locally by ID; avoid vacating arbitrary occupants
+          if (seatIndex != null) {
+            _seatVoiceLevels[seatIndex] = 0.0;
           }
+          debugPrint('[LivePartyProvider] SeatReleased: Target user $targetUserId not in local participants list; refreshing.');
+          _syncRoomStateOnReconnect();
         }
+
         if (seatIndex != null) {
           _seatVoiceLevels[seatIndex] = 0.0;
         }
@@ -1992,6 +2021,77 @@ class LivePartyProvider extends ChangeNotifier {
         notifyListeners();
       } catch (e) {
         debugPrint('[LivePartyProvider] SeatReleased error: $e');
+      }
+    });
+
+    // 6b. Atomic Mic Seat Transferred Stream (ZP-BUG-021)
+    _socketSeatTransferredSub?.cancel();
+    _socketSeatTransferredSub = _socketService.seatTransferredStream.listen((data) {
+      if (!matchesCurrentRoom(data)) return;
+      try {
+        final userId = data['userId']?.toString() ?? data['targetUserId']?.toString();
+        final rawToSeat = data['toSeatIndex'] ?? data['seatIndex'] ?? data['seatNumber'];
+        final rawFromSeat = data['fromSeatIndex'] ?? data['vacatedSeatIndex'] ?? data['previousSeatIndex'];
+        final toSeatIndex = (rawToSeat is num) ? rawToSeat.toInt() : int.tryParse(rawToSeat?.toString() ?? '');
+        final fromSeatIndex = (rawFromSeat is num) ? rawFromSeat.toInt() : int.tryParse(rawFromSeat?.toString() ?? '');
+
+        if (toSeatIndex == null || userId == null || userId.isEmpty) return;
+
+        // Find transferring participant
+        final pIdx = _participants.indexWhere((p) =>
+            p.user.id == userId ||
+            p.user.id.toLowerCase() == userId.toLowerCase() ||
+            p.user.id.toLowerCase().replaceFirst(RegExp(r'^user_'), '') == userId.toLowerCase().replaceFirst(RegExp(r'^user_'), ''));
+
+        // State-based idempotency check:
+        // If the participant is already seated at toSeatIndex, this is a duplicate event (e.g. from alias emission).
+        // Returning early avoids redundant loops and extraneous notifyListeners().
+        // Legitimate reverse or rapid transfers will have a different toSeatIndex and execute immediately.
+        if (pIdx != -1 && _participants[pIdx].seatNumber == toSeatIndex) {
+          debugPrint('[LivePartyProvider] SeatTransferred: Idempotent duplicate ignored for user $userId already on seat $toSeatIndex');
+          return;
+        }
+
+        final isCurrentUser = userId == currentUser.id;
+
+        // Clear voice level on vacated seat
+        if (fromSeatIndex != null) {
+          _seatVoiceLevels[fromSeatIndex] = 0.0;
+        }
+
+        // Vacate any other occupant on the destination seat (toSeatIndex)
+        for (int i = 0; i < _participants.length; i++) {
+          final p = _participants[i];
+          if (p.seatNumber == toSeatIndex && p.user.id != userId) {
+            _participants[i] = p.copyWith(
+              clearSeat: true,
+              role: p.role == ParticipantRole.host ? ParticipantRole.host : ParticipantRole.listener,
+              micStatus: MicStatus.muted,
+            );
+          }
+        }
+
+        if (pIdx != -1) {
+          final currentP = _participants[pIdx];
+          final currentMicStatus = currentP.micStatus;
+          // Atomically move participant to toSeatIndex, preserving role, mute status, and Agora UID
+          _participants[pIdx] = currentP.copyWith(
+            seatNumber: toSeatIndex,
+            role: currentP.role == ParticipantRole.host ? ParticipantRole.host : ParticipantRole.speaker,
+            micStatus: currentMicStatus,
+          );
+        }
+
+        // If transferring user is local user, preserve publisher role and audio state
+        if (isCurrentUser) {
+          _agoraService.switchRole(isHost: true);
+          // Do NOT demote to audience; local microphone status remains unchanged
+        }
+
+        _deduplicateParticipants();
+        notifyListeners();
+      } catch (e) {
+        debugPrint('[LivePartyProvider] SeatTransferred error: $e');
       }
     });
 
@@ -3050,6 +3150,7 @@ class LivePartyProvider extends ChangeNotifier {
     _socketUserLeftSub?.cancel();
     _socketSeatOccupiedSub?.cancel();
     _socketSeatReleasedSub?.cancel();
+    _socketSeatTransferredSub?.cancel();
     _socketViewerCountSub?.cancel();
     _socketRoomClosedSub?.cancel();
     _socketGiftSentSub?.cancel();
