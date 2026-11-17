@@ -1935,15 +1935,29 @@ export async function adminKickUser(
   }
 
   // Regular participant/speaker/viewer
+  const targetSeat = Array.isArray(room.seats) ? room.seats.find((s) => s.occupiedUserId === targetUserId) : null;
   await roomRepository.kickUserFromRoomTx({ roomId, targetUserId }, db);
   await socketEmitter.leaveUserSocketsFromRoom(targetUserId, roomId).catch(() => {});
 
+  const updatedRoom = await roomRepository.findRoomById(roomId, db).catch(() => null);
+  let viewerCount = updatedRoom?.currentViewersCount || 0;
+  try {
+    const presCount = await presenceService.getRoomViewerCount(roomId, room.creatorUserId);
+    if (typeof presCount === 'number') viewerCount = presCount;
+  } catch (_) {}
+  const snapshot = updatedRoom ? formatRoomSnapshot(updatedRoom, viewerCount) : null;
+
   const kickPayload = {
     roomId,
+    clientRoomId: roomId,
     targetUserId,
+    userId: targetUserId,
     kickedByUserId: adminId || 'admin',
     isHost: false,
     reason: reason || 'Participant removed by platform moderation',
+    seats: snapshot?.seats || [],
+    members: snapshot?.members || [],
+    viewerCount,
     timestamp: new Date().toISOString(),
   };
 
@@ -1951,7 +1965,29 @@ export async function adminKickUser(
   socketEmitter.emitToRoom(roomId, 'room:user_kicked', kickPayload);
   socketEmitter.emitToUser(targetUserId, SOCKET_EVENTS.ROOM_USER_KICKED, kickPayload);
   socketEmitter.emitToUser(targetUserId, 'room:user_kicked', kickPayload);
-  socketEmitter.broadcastGlobal('room:user_kicked', kickPayload);
+
+  if (targetSeat) {
+    const seatRelPayload = {
+      id: `seat_rel_${roomId}_${targetSeat.seatIndex}_${targetUserId}_${Date.now()}`,
+      eventId: `seat_rel_${roomId}_${targetSeat.seatIndex}_${targetUserId}_${Date.now()}`,
+      roomId,
+      clientRoomId: roomId,
+      seatIndex: targetSeat.seatIndex,
+      seatNumber: targetSeat.seatIndex,
+      releasedByUserId: adminId || 'admin',
+      targetUserId,
+      userId: targetUserId,
+      previousUserId: targetUserId,
+      isModerationAction: true,
+      action: 'KICK_FROM_ROOM',
+      seats: snapshot?.seats || [],
+      members: snapshot?.members || [],
+      viewerCount,
+      timestamp: new Date().toISOString(),
+    };
+    socketEmitter.emitToRoom(roomId, SOCKET_EVENTS.ROOM_SEAT_RELEASED, seatRelPayload);
+    socketEmitter.emitToRoom(roomId, 'room:seat_released', seatRelPayload);
+  }
 
   await logAudit(
     {
@@ -3879,7 +3915,9 @@ export async function kickRoomUser(roomId, actorUserId, { targetUserId, reason }
 
   const kickPayload = {
     roomId: room.id,
+    clientRoomId: room.id,
     targetUserId,
+    userId: targetUserId,
     kickedByUserId: actorUserId,
     reason: reason || 'You were kicked from this room by a room moderator',
     seats: snapshot.seats,
@@ -3893,11 +3931,22 @@ export async function kickRoomUser(roomId, actorUserId, { targetUserId, reason }
   socketEmitter.emitToRoom(room.id, 'room:user_kicked', kickPayload);
   if (occupiedSeat) {
     const seatRelPayload = {
+      id: `seat_rel_${room.id}_${occupiedSeat.seatIndex}_${targetUserId}_${Date.now()}`,
+      eventId: `seat_rel_${room.id}_${occupiedSeat.seatIndex}_${targetUserId}_${Date.now()}`,
       roomId: room.id,
+      clientRoomId: room.id,
       seatIndex: occupiedSeat.seatIndex,
+      seatNumber: occupiedSeat.seatIndex,
       releasedByUserId: actorUserId,
       targetUserId,
+      userId: targetUserId,
+      previousUserId: targetUserId,
+      isModerationAction: true,
+      action: 'KICK_FROM_ROOM',
       seats: snapshot.seats,
+      members: snapshot.members,
+      viewerCount,
+      timestamp: new Date().toISOString(),
     };
     socketEmitter.emitToRoom(room.id, SOCKET_EVENTS.ROOM_SEAT_RELEASED, seatRelPayload);
     socketEmitter.emitToRoom(room.id, 'room:seat_released', seatRelPayload);
@@ -4000,10 +4049,16 @@ export async function adminRemoveFromMic(
   const snapshot = formatRoomSnapshot(updatedRoom, viewerCount);
 
   const payload = {
+    id: `seat_rel_${room.id}_${occupiedSeat.seatIndex}_${targetUserId}_${Date.now()}`,
+    eventId: `seat_rel_${room.id}_${occupiedSeat.seatIndex}_${targetUserId}_${Date.now()}`,
     roomId: room.id,
+    clientRoomId: room.id,
     seatIndex: occupiedSeat.seatIndex,
+    seatNumber: occupiedSeat.seatIndex,
     releasedByUserId: adminId || 'admin',
     targetUserId,
+    userId: targetUserId,
+    previousUserId: targetUserId,
     isModerationAction: true,
     action: 'REMOVE_FROM_MIC',
     seats: snapshot.seats,

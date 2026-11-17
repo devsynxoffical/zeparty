@@ -177,11 +177,47 @@ export async function issueRoomAgoraToken({ roomId, userId }, db = prisma) {
     expirySeconds,
   });
 
+  // Derive user role in room from authoritative database state
+  // Check if user is currently seated or a co-host or host
+  const isHost = room.creatorUserId === userId;
+  const userSeat = (room.seats || []).find((s) => s.occupiedUserId === userId);
+  const isSeated = Boolean(userSeat);
+  
+  let memberRole = 'PARTICIPANT';
+  if (isHost) {
+    memberRole = 'HOST';
+  } else if (room.members && Array.isArray(room.members)) {
+    const memberRecord = room.members.find((m) => m.userId === userId);
+    if (memberRecord?.role === 'CO_HOST') {
+      memberRole = 'CO_HOST';
+    } else if (isSeated) {
+      memberRole = 'SPEAKER';
+    }
+  } else if (isSeated) {
+    memberRole = 'SPEAKER';
+  }
+
+  // Build authoritative agoraUidMap for the room
+  const agoraUidMap = {};
+  if (room.creatorUserId) {
+    agoraUidMap[room.creatorUserId] = deriveAgoraUid(room.creatorUserId);
+  }
+  if (Array.isArray(room.seats)) {
+    for (const seat of room.seats) {
+      if (seat.occupiedUserId) {
+        agoraUidMap[seat.occupiedUserId] = deriveAgoraUid(seat.occupiedUserId);
+      }
+    }
+  }
+  if (userId) {
+    agoraUidMap[userId] = deriveAgoraUid(userId);
+  }
+
   // Subscribe connected sockets of regular user to the room channel
   let userIdentity = null;
   if (user) {
     userIdentity = formatAuthoritativeUserIdentity(user, {
-      role: room.creatorUserId === userId ? 'HOST' : 'PARTICIPANT',
+      role: memberRole,
     });
     await socketEmitter.joinUserSocketsToRoom(userId, room.id, userIdentity).catch(() => {});
   }
@@ -197,6 +233,9 @@ export async function issueRoomAgoraToken({ roomId, userId }, db = prisma) {
     userId,
     userIdentity,
     role,
+    agoraUidMap,
+    isSeated,
+    seatIndex: userSeat ? userSeat.seatIndex : null,
     appId: (env.AGORA_APP_ID && !env.AGORA_APP_ID.includes('mock_agora')) ? env.AGORA_APP_ID : '970ca35de60c44645bbae8a215061401',
     expiresInSeconds: expirySeconds,
     expiresIn: expirySeconds,

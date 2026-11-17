@@ -1270,27 +1270,6 @@ export async function occupySeatTx({ roomId, seatIndex, userId }, db = prisma) {
       }
     }
 
-    // Check if user already occupies another seat in this room
-    const existingUserSeat = await tx.roomSeat.findFirst({
-      where: {
-        roomId: resolvedRoomId,
-        occupiedUserId: userId,
-      },
-    });
-
-    let vacatedSeatIndex = null;
-    if (existingUserSeat) {
-      if (existingUserSeat.seatIndex === seatIndex) {
-        return { ...existingUserSeat, updatedSeat: existingUserSeat, vacatedSeatIndex: null, isNoop: true }; // Idempotent already on this seat
-      }
-      // Auto-vacate previous seat to allow seamless mic assignment/move
-      vacatedSeatIndex = existingUserSeat.seatIndex;
-      await tx.roomSeat.update({
-        where: { id: existingUserSeat.id },
-        data: { occupiedUserId: null },
-      });
-    }
-
     // Find target seat or auto-create if missing
     let targetSeat = await tx.roomSeat.findUnique({
       where: {
@@ -1333,6 +1312,29 @@ export async function occupySeatTx({ roomId, seatIndex, userId }, db = prisma) {
       throw error;
     }
 
+    // Check if user already occupies another seat in this room
+    const existingUserSeat = await tx.roomSeat.findFirst({
+      where: {
+        roomId: resolvedRoomId,
+        occupiedUserId: userId,
+      },
+    });
+
+    let vacatedSeatIndex = null;
+    let preservedMuteState = false;
+    if (existingUserSeat) {
+      if (existingUserSeat.seatIndex === seatIndex) {
+        return { ...existingUserSeat, updatedSeat: existingUserSeat, vacatedSeatIndex: null, isNoop: true }; // Idempotent already on this seat
+      }
+      // Auto-vacate previous seat to allow seamless mic assignment/move
+      vacatedSeatIndex = existingUserSeat.seatIndex;
+      preservedMuteState = Boolean(existingUserSeat.isMuted);
+      await tx.roomSeat.update({
+        where: { id: existingUserSeat.id },
+        data: { occupiedUserId: null, isMuted: false, isMutedByModerator: false },
+      });
+    }
+
     // Check if user has an active moderation mute in this room
     const activeModMute = await tx.roomModeration.findFirst({
       where: {
@@ -1356,7 +1358,8 @@ export async function occupySeatTx({ roomId, seatIndex, userId }, db = prisma) {
       },
       data: {
         occupiedUserId: userId,
-        ...(isModerationMuted ? { isMuted: true, isMutedByModerator: true } : {}),
+        isMuted: isModerationMuted ? true : preservedMuteState,
+        ...(isModerationMuted ? { isMutedByModerator: true } : {}),
       },
     });
 
@@ -1715,12 +1718,20 @@ export async function updateUserSeatMuteStatus({ roomId, userId, isMuted, isMute
 }
 
 export async function kickUserFromRoomTx({ roomId, targetUserId }, db = prisma) {
+  if (!targetUserId || typeof targetUserId !== 'string' || targetUserId.trim() === '') {
+    const error = new Error('targetUserId is required to kick user from room');
+    error.statusCode = 400;
+    error.code = 'INVALID_PARAMETERS';
+    throw error;
+  }
+  const cleanTargetUserId = String(targetUserId).trim();
+
   return await db.$transaction(async (tx) => {
-    // 1. Release any seat occupied by this user
+    // 1. Release any seat occupied by this specific target user ONLY
     await tx.roomSeat.updateMany({
       where: {
         roomId,
-        occupiedUserId: targetUserId,
+        occupiedUserId: cleanTargetUserId,
       },
       data: {
         occupiedUserId: null,
@@ -1733,7 +1744,7 @@ export async function kickUserFromRoomTx({ roomId, targetUserId }, db = prisma) 
     await tx.roomMember.deleteMany({
       where: {
         roomId,
-        userId: targetUserId,
+        userId: cleanTargetUserId,
       },
     });
 

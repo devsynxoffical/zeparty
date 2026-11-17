@@ -93,32 +93,33 @@ export async function onOccupySeat(io, socket, data, callback, db) {
     // we MUST still broadcast the authoritative seat state so other clients in the room receive it in real-time.
     const targetRoomIds = Array.from(new Set([String(roomId), String(canonicalRoomId)]));
 
-    // If moving from a previous seat, broadcast seat release for old seat first across all aliases
+    // If moving from a previous seat, emit direct transfer event without intermediate seat release
+    // (Emitting ROOM_SEAT_RELEASED during seat transfers causes Flutter to demote the user to listener and mute them)
     if (typeof vacatedSeatIndex === 'number' && vacatedSeatIndex !== seatIndex) {
-      const releaseEventId = `seat_rel_${canonicalRoomId}_${vacatedSeatIndex}_${userId}_${Date.now()}`;
-      const releasePayload = {
-        id: releaseEventId,
-        eventId: releaseEventId,
+      const transferEventId = `seat_xfer_${canonicalRoomId}_${vacatedSeatIndex}_to_${seatIndex}_${userId}_${Date.now()}`;
+      const transferPayload = {
+        id: transferEventId,
+        eventId: transferEventId,
         roomId: canonicalRoomId,
         canonicalRoomId,
         clientRoomId: roomId,
-        seatIndex: vacatedSeatIndex,
-        seatNumber: vacatedSeatIndex,
-        releasedByUserId: userId,
+        fromSeatIndex: vacatedSeatIndex,
+        toSeatIndex: seatIndex,
+        seatIndex,
+        seatNumber: seatIndex,
+        vacatedSeatIndex,
+        previousSeatNumber: vacatedSeatIndex,
         userId,
-        previousUserId: userId,
+        targetUserId: userId,
+        user: payload.user,
+        isMuted: payload.isMuted,
         seats: updatedSnapshot ? updatedSnapshot.seats : [],
         timestamp: new Date().toISOString(),
       };
       for (const rid of targetRoomIds) {
         const broadcastTarget = io && io.to ? io.to(`room:${rid}`) : (socket.to ? socket.to(`room:${rid}`) : socket);
-        broadcastTarget.emit(SOCKET_EVENTS.ROOM_SEAT_RELEASED, releasePayload);
-        broadcastTarget.emit('room_seat_released', releasePayload);
-        broadcastTarget.emit('room:seat_left', releasePayload);
-        broadcastTarget.emit('room_seat_left', releasePayload);
-        broadcastTarget.emit('seat_released', releasePayload);
-        broadcastTarget.emit('seat:released', releasePayload);
-        broadcastTarget.emit('mic:left', releasePayload);
+        broadcastTarget.emit('room:seat_transferred', transferPayload);
+        broadcastTarget.emit('seat_transferred', transferPayload);
       }
     }
 
@@ -208,6 +209,18 @@ export async function onLeaveSeat(io, socket, data, callback, db = prisma) {
       return;
     }
 
+    // Identify who was actually occupying the seat before releasing it
+    let targetOccupantUserId = userId;
+    try {
+      const seatBeforeRelease = await (db || prisma).roomSeat.findFirst({
+        where: { roomId: resolvedRoomId, seatIndex },
+        select: { occupiedUserId: true },
+      });
+      if (seatBeforeRelease?.occupiedUserId) {
+        targetOccupantUserId = seatBeforeRelease.occupiedUserId;
+      }
+    } catch (_) {}
+
     // Delegate to authoritative room service for seat release authorization
     const releasedSeat = await roomService.leaveSeat(roomId, seatIndex, userId, isAdmin, db);
     const effectiveVacatedSeatIndex = typeof releasedSeat?.seatIndex === 'number' ? releasedSeat.seatIndex : seatIndex;
@@ -224,8 +237,8 @@ export async function onLeaveSeat(io, socket, data, callback, db = prisma) {
       }
     } catch (_) {}
 
-    const isRoomOwner = updatedSnapshot ? (updatedSnapshot.creatorUserId === userId) : false;
-    const leaveEventId = `seat_rel_${resolvedRoomId}_${effectiveVacatedSeatIndex}_${userId}_${Date.now()}`;
+    const isRoomOwner = updatedSnapshot ? (updatedSnapshot.creatorUserId === targetOccupantUserId) : false;
+    const leaveEventId = `seat_rel_${resolvedRoomId}_${effectiveVacatedSeatIndex}_${targetOccupantUserId}_${Date.now()}`;
 
     const payload = {
       id: leaveEventId,
@@ -236,8 +249,9 @@ export async function onLeaveSeat(io, socket, data, callback, db = prisma) {
       seatIndex: effectiveVacatedSeatIndex,
       seatNumber: effectiveVacatedSeatIndex,
       releasedByUserId: userId,
-      userId,
-      previousUserId: userId,
+      userId: targetOccupantUserId,
+      targetUserId: targetOccupantUserId,
+      previousUserId: targetOccupantUserId,
       isOwner: isRoomOwner,
       isHost: isRoomOwner,
       seats: updatedSnapshot ? updatedSnapshot.seats : [],

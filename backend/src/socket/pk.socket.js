@@ -183,6 +183,33 @@ export function registerPKHandlers(io, socket) {
   });
 
   /**
+   * 9. Direct Co-Host to PK start via Socket (ZP-BUG-024)
+   */
+  socket.on('pk:start_direct', async (data, callback) => {
+    try {
+      const { roomId, hostRoomId, opponentUserId, durationSeconds, durationMinutes } = data || {};
+      const callerUserId = getUserId();
+      const parsedDuration = (Number(durationMinutes) ? Number(durationMinutes) * 60 : null) || Number(durationSeconds) || 300;
+
+      const result = await pkService.transitionCoHostToPK({
+        roomId: hostRoomId || roomId || socket.currentRoomId,
+        hostUserId: callerUserId,
+        opponentUserId,
+        durationSeconds: parsedDuration,
+        callerUserId,
+      });
+
+      if (typeof callback === 'function') {
+        callback({ success: true, data: result.data });
+      }
+    } catch (err) {
+      if (typeof callback === 'function') {
+        callback({ success: false, error: err.message, code: err.code || 'PK_START_DIRECT_FAILED' });
+      }
+    }
+  });
+
+  /**
    * Socket disconnect hook for host disconnect grace
    */
   socket.on('disconnect', () => {

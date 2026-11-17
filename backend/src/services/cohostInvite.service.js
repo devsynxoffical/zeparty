@@ -8,6 +8,7 @@ import stageService from './stage.service.js';
 // In-memory fallback stores for distributed or non-Redis local testing
 const localCoHostInviteStore = new Map();
 const localCoHostTargetMap = new Map(); // key: `${roomId}:${targetUserId}` -> inviteId
+const recentlyAcceptedMap = new Map(); // key: `${roomId}:${targetUserId}` -> { acceptedAt: number, payload: any }
 
 const COHOST_INVITE_TTL_SECONDS = 60;
 
@@ -17,6 +18,11 @@ function cleanLocalExpired() {
     if (new Date(invite.expiresAt).getTime() <= now) {
       localCoHostInviteStore.delete(id);
       localCoHostTargetMap.delete(`${invite.roomId}:${invite.targetUserId}`);
+    }
+  }
+  for (const [key, record] of recentlyAcceptedMap.entries()) {
+    if (now - record.acceptedAt > 15000) {
+      recentlyAcceptedMap.delete(key);
     }
   }
 }
@@ -394,10 +400,59 @@ export async function acceptCoHostInvite(
   { roomId, invitationId, userId },
   db = prisma
 ) {
+  cleanLocalExpired();
+  const recentKey = `${roomId || ''}:${userId}`;
+  if (recentlyAcceptedMap.has(recentKey)) {
+    const existing = recentlyAcceptedMap.get(recentKey);
+    return {
+      success: true,
+      message: 'Co-Host invitation accepted successfully (idempotent)',
+      data: existing.payload,
+      ...existing.payload,
+    };
+  }
+
+  // Redis-backed distributed idempotency check if available
+  if (redisProxy.isOpen && roomId && userId) {
+    try {
+      const cached = await redisProxy.get(`cohost_invite:accepted:${roomId}:${userId}`);
+      if (cached) {
+        const payload = JSON.parse(cached);
+        return {
+          success: true,
+          message: 'Co-Host invitation accepted successfully (idempotent)',
+          data: payload,
+          ...payload,
+        };
+      }
+    } catch (_) {}
+  }
+
   const invitation = (invitationId ? await getCoHostInviteById(invitationId) : null)
     || await getActiveCoHostInviteForUser(roomId, userId);
 
   if (!invitation || invitation.status !== 'pending') {
+    // Durable DB check: If user is already seated as a CO_HOST or on seat 1 in this room, treat as idempotent success
+    if (roomId) {
+      const currentRoom = await resolveRoom(roomId, db);
+      if (currentRoom) {
+        const userSeat = (currentRoom.seats || []).find((s) => s.occupiedUserId === userId);
+        const member = await db.roomMember.findUnique({
+          where: { roomId_userId: { roomId: currentRoom.id, userId } },
+        });
+        if (userSeat || member?.role === 'CO_HOST') {
+          return {
+            success: true,
+            message: 'User is already an active co-host in this room',
+            accepted: true,
+            status: 'accepted',
+            roomId: currentRoom.id,
+            targetUserId: userId,
+            userId,
+          };
+        }
+      }
+    }
     const error = new Error('Co-host invitation has expired or is no longer valid');
     error.statusCode = 400;
     error.code = 'INVITATION_EXPIRED';
@@ -549,10 +604,31 @@ export async function acceptCoHostInvite(
     timestamp: new Date().toISOString(),
   };
 
-  // Broadcast real-time responses
+  // Record in recentlyAcceptedMap for idempotent deduplication across rapid duplicate requests
+  recentlyAcceptedMap.set(`${room.id}:${userId}`, {
+    acceptedAt: Date.now(),
+    payload: responsePayload,
+  });
+
+  // Store in Redis with TTL for distributed horizontal clusters if Redis is connected
+  if (redisProxy.isOpen) {
+    try {
+      await redisProxy.set(
+        `cohost_invite:accepted:${room.id}:${userId}`,
+        JSON.stringify(responsePayload),
+        { EX: 20 }
+      );
+    } catch (_) {}
+  }
+
+  // Broadcast canonical real-time response to the room once
+  // (Both host and room members listen to room:cohost_invite_response in room)
   socketEmitter.emitToRoom(room.id, 'room:cohost_invite_response', responsePayload);
-  socketEmitter.emitToRoom(room.id, 'cohost_invite_response', responsePayload);
-  socketEmitter.emitToUser(invitation.inviterUserId, 'room:cohost_invite_response', responsePayload);
+  // Also emit to inviter user directly if they are in personal channel and not in room channel
+  // (safe because inviter client deduplicates by invitationId or payload.status)
+  if (invitation.inviterUserId) {
+    socketEmitter.emitToUser(invitation.inviterUserId, 'room:cohost_invite_response', responsePayload);
+  }
 
   // Authoritative stage broadcast (emits room:stage_updated, room:seat_occupied, room:seat_updated, room:cohost_joined)
   let stageSnapshot = null;
@@ -563,7 +639,7 @@ export async function acceptCoHostInvite(
       userId,
       user: responsePayload.user,
       role: 'CO_HOST',
-    });
+    }, db);
     if (stageSnapshot) {
       responsePayload.stage = stageSnapshot.slots || stageSnapshot.stage;
       responsePayload.coHost = stageSnapshot.coHost;

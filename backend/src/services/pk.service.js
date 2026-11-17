@@ -2,13 +2,23 @@ import pkRepository from '../repositories/pk.repository.js';
 import socketEmitter from '../socket/socket.emitter.js';
 
 export class PKService {
-  constructor(repo = pkRepository) {
-    this.repo = repo;
+  constructor(repo) {
+    this._repo = repo;
     // Invite rate limit tracking: map of userId -> array of timestamps
     this.inviteRateLimits = new Map();
     // Sweeper interval handle
     this.sweeperInterval = null;
-    this.startBackgroundSweeper();
+    if (process.env.NODE_ENV !== 'test') {
+      this.startBackgroundSweeper();
+    }
+  }
+
+  get repo() {
+    return this._repo || pkRepository;
+  }
+
+  set repo(val) {
+    this._repo = val;
   }
 
   /**
@@ -477,7 +487,28 @@ export class PKService {
     };
 
     socketEmitter.emitToRoom(finished.roomAId, 'pk:match_finished', endPayload);
-    socketEmitter.emitToRoom(finished.roomBId, 'pk:match_finished', endPayload);
+    if (finished.roomBId && finished.roomBId !== finished.roomAId) {
+      socketEmitter.emitToRoom(finished.roomBId, 'pk:match_finished', endPayload);
+    }
+
+    // If this was a single-room co-host PK, restore hostB to CO_HOST role in roomMember and stage
+    if (finished.roomAId === finished.roomBId && finished.hostBUserId) {
+      try {
+        await this.repo.prisma.roomMember.updateMany({
+          where: { roomId: finished.roomAId, userId: finished.hostBUserId },
+          data: { role: 'CO_HOST' },
+        });
+        const stageModule = await import('./stage.service.js');
+        if (stageModule?.default?.broadcastStageUpdate) {
+          await stageModule.default.broadcastStageUpdate(finished.roomAId, 'PK_FINISHED', {
+            matchId,
+            status: 'FINISHED',
+            winnerHostId: snapshot.winnerHostId,
+            isDraw: snapshot.isDraw,
+          }, this.repo.prisma);
+        }
+      } catch (_) {}
+    }
 
     return snapshot;
   }
@@ -500,7 +531,9 @@ export class PKService {
     };
 
     socketEmitter.emitToRoom(forfeited.roomAId, 'pk:match_forfeited', payload);
-    socketEmitter.emitToRoom(forfeited.roomBId, 'pk:match_forfeited', payload);
+    if (forfeited.roomBId && forfeited.roomBId !== forfeited.roomAId) {
+      socketEmitter.emitToRoom(forfeited.roomBId, 'pk:match_forfeited', payload);
+    }
 
     return snapshot;
   }
@@ -521,7 +554,9 @@ export class PKService {
     };
 
     socketEmitter.emitToRoom(aborted.roomAId, 'pk:match_aborted', payload);
-    socketEmitter.emitToRoom(aborted.roomBId, 'pk:match_aborted', payload);
+    if (aborted.roomBId && aborted.roomBId !== aborted.roomAId) {
+      socketEmitter.emitToRoom(aborted.roomBId, 'pk:match_aborted', payload);
+    }
 
     return payload;
   }
@@ -636,6 +671,138 @@ export class PKService {
    */
   async adminReviseResult(data) {
     return this.repo.reviseMatchResult(data);
+  }
+
+  /**
+   * Directly transition from Co-Hosting to a PK Battle in a single room session.
+   * Resolves ZP-BUG-024: Updates stage slot and member roles to PK and starts PKMatch.
+   */
+  async transitionCoHostToPK({ roomId, hostUserId, opponentUserId, durationSeconds = 300, callerUserId }) {
+    if (!roomId) {
+      const err = new Error('roomId is required.');
+      err.code = 'MISSING_PARAMETERS';
+      err.status = 400;
+      throw err;
+    }
+
+    const room = await this.repo.prisma.room.findUnique({
+      where: { id: roomId },
+      include: {
+        seats: { orderBy: { seatIndex: 'asc' } },
+        members: true,
+      },
+    });
+
+    if (!room) {
+      const err = new Error('Room not found.');
+      err.code = 'ROOM_NOT_FOUND';
+      err.status = 404;
+      throw err;
+    }
+
+    const effectiveHostId = hostUserId || room.creatorUserId;
+    let effectiveOpponentId = opponentUserId;
+
+    if (!effectiveOpponentId) {
+      // Find co-host on seat 1 or roomMember with role CO_HOST
+      const seat1 = (room.seats || []).find((s) => s.seatIndex === 1);
+      const coHostMember = (room.members || []).find((m) => m.role === 'CO_HOST');
+      effectiveOpponentId = seat1?.occupiedUserId || coHostMember?.userId;
+    }
+
+    if (!effectiveOpponentId) {
+      const err = new Error('No co-host found to start PK with.');
+      err.code = 'COHOST_NOT_FOUND';
+      err.status = 400;
+      throw err;
+    }
+
+    // Authorization: caller must be host or co-host
+    if (callerUserId && callerUserId !== effectiveHostId && callerUserId !== effectiveOpponentId) {
+      const err = new Error('Only the host or co-host can initiate PK.');
+      err.code = 'FORBIDDEN';
+      err.status = 403;
+      throw err;
+    }
+
+    // 1. Create and start direct single-room PK match in repository
+    const match = await this.repo.createDirectSingleRoomPKMatch({
+      roomId: room.id,
+      hostAUserId: effectiveHostId,
+      hostBUserId: effectiveOpponentId,
+      durationSeconds: Number(durationSeconds) || 300,
+      configSnapshot: { singleRoomPK: true },
+    });
+
+    // 2. Update roomMember roles to PK in DB
+    await Promise.all([
+      this.repo.prisma.roomMember.upsert({
+        where: { roomId_userId: { roomId: room.id, userId: effectiveHostId } },
+        update: { role: 'HOST' },
+        create: { roomId: room.id, userId: effectiveHostId, role: 'HOST' },
+      }).catch(() => {}),
+      this.repo.prisma.roomMember.upsert({
+        where: { roomId_userId: { roomId: room.id, userId: effectiveOpponentId } },
+        update: { role: 'PK' },
+        create: { roomId: room.id, userId: effectiveOpponentId, role: 'PK' },
+      }).catch(() => {}),
+    ]);
+
+    let formattedMatch = null;
+    try {
+      if (typeof this.repo.getMatchSnapshot === 'function') {
+        formattedMatch = await this.repo.getMatchSnapshot(match.id);
+      }
+    } catch (_) {}
+    if (!formattedMatch) {
+      formattedMatch = {
+        id: match.id,
+        status: match.status,
+        scoreA: match.scoreA || 0,
+        scoreB: match.scoreB || 0,
+        durationSeconds: match.durationSeconds,
+      };
+    }
+
+    // 3. Emit canonical and Flutter-compatible socket events to room
+    const pkStartPayload = {
+      matchId: match.id,
+      pkId: match.id,
+      id: match.id,
+      roomId: room.id,
+      status: 'ACTIVE',
+      hostAUserId: effectiveHostId,
+      hostBUserId: effectiveOpponentId,
+      durationSeconds: match.durationSeconds,
+      startAt: match.startAt?.toISOString() || new Date().toISOString(),
+      endAt: match.endAt?.toISOString(),
+      scoreA: match.scoreA || 0,
+      scoreB: match.scoreB || 0,
+      match: formattedMatch,
+    };
+
+    socketEmitter.emitToRoom(room.id, 'pk:match_started', pkStartPayload);
+    socketEmitter.emitToRoom(room.id, 'pk:started', pkStartPayload);
+    socketEmitter.emitToRoom(room.id, 'pk:status', pkStartPayload);
+
+    // 4. Update stage broadcast if stage service is available
+    try {
+      const stageModule = await import('./stage.service.js');
+      if (stageModule?.default?.broadcastStageUpdate) {
+        await stageModule.default.broadcastStageUpdate(room.id, 'PK_STARTED', {
+          matchId: match.id,
+          hostAUserId: effectiveHostId,
+          hostBUserId: effectiveOpponentId,
+          status: 'ACTIVE',
+        }, this.repo.prisma);
+      }
+    } catch (_) {}
+
+    return {
+      success: true,
+      data: pkStartPayload,
+      message: 'Co-Host transitioned to PK battle successfully.',
+    };
   }
 
   /**
