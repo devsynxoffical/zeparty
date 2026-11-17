@@ -96,6 +96,42 @@ export async function ensureDatabaseSchema(db = prisma) {
     console.warn('Wallet DDL note:', err.message);
   }
 
+  // 2d. Ensure AssetType enum values for Homepage Skin & Profile Card (ZP-BUG-012, ZP-BUG-013)
+  const assetTypeEnums = ['HOMEPAGE_SKIN', 'PROFILE_CARD'];
+  for (const ate of assetTypeEnums) {
+    try {
+      await db.$executeRawUnsafe(`ALTER TYPE "AssetType" ADD VALUE IF NOT EXISTS '${ate}';`);
+    } catch {
+      try {
+        const rows = await db.$queryRawUnsafe(`
+          SELECT 1 FROM pg_type t 
+          JOIN pg_enum e ON t.oid = e.enumtypid 
+          WHERE t.typname = 'AssetType' AND e.enumlabel = '${ate}';
+        `);
+        if (!rows || rows.length === 0) {
+          await db.$executeRawUnsafe(`ALTER TYPE "AssetType" ADD VALUE '${ate}';`);
+        }
+      } catch {}
+    }
+  }
+
+  // 2e. Ensure UserProfile columns for SVIP Points, Homepage Skin & Profile Card
+  const userProfileColumns = [
+    `ALTER TABLE "UserProfile" ADD COLUMN IF NOT EXISTS "svipPoints" BIGINT NOT NULL DEFAULT 0;`,
+    `ALTER TABLE "UserProfile" ADD COLUMN IF NOT EXISTS "cumulativeRechargedCoins" BIGINT NOT NULL DEFAULT 0;`,
+    `ALTER TABLE "UserProfile" ADD COLUMN IF NOT EXISTS "equippedSkinId" TEXT;`,
+    `ALTER TABLE "UserProfile" ADD COLUMN IF NOT EXISTS "profileSkinUrl" TEXT;`,
+    `ALTER TABLE "UserProfile" ADD COLUMN IF NOT EXISTS "equippedProfileCardId" TEXT;`,
+    `ALTER TABLE "UserProfile" ADD COLUMN IF NOT EXISTS "profileCardUrl" TEXT;`,
+  ];
+  for (const ddl of userProfileColumns) {
+    try {
+      await db.$executeRawUnsafe(ddl);
+    } catch (err) {
+      console.warn('UserProfile DDL note:', err.message);
+    }
+  }
+
   // 3. Ensure PKEvent columns
   const pkEventColumns = [
     `ALTER TABLE "PKEvent" ADD COLUMN IF NOT EXISTS "initiatorUserId" TEXT;`,
@@ -780,6 +816,24 @@ export async function ensureDatabaseSchema(db = prisma) {
     console.log('✅ Room session tracking and GiftTransaction sessionId schema verified');
   } catch (err) {
     console.warn('Room session tracking DDL note:', err.message);
+  }
+
+  // 19. Ensure SvipTransactionIdempotency table and indexes exist (ZP-BUG-015 Phase 1)
+  try {
+    await db.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "SvipTransactionIdempotency" (
+        "id" TEXT PRIMARY KEY,
+        "referenceId" TEXT NOT NULL,
+        "userId" TEXT NOT NULL,
+        "coins" BIGINT NOT NULL,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await db.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "SvipTransactionIdempotency_referenceId_key" ON "SvipTransactionIdempotency"("referenceId");`);
+    await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "SvipTransactionIdempotency_userId_idx" ON "SvipTransactionIdempotency"("userId");`);
+    console.log('✅ ZP-BUG-015: SvipTransactionIdempotency schema verified');
+  } catch (err) {
+    console.warn('SvipTransactionIdempotency DDL note:', err.message);
   }
 
   console.log('✅ Database schema and platform analytics verified and synchronized successfully');

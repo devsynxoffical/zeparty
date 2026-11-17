@@ -1856,7 +1856,21 @@ export async function getUserHonorAssets(req, res, next) {
   }
 }
 
+export async function getMySvipStatus(req, res, next) {
+  try {
+    const userId = req.user?.id || req.user?.userId;
+    const status = await userService.getUserSvipStatus(userId);
+    return res.status(200).json({
+      success: true,
+      data: status,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
+  getMySvipStatus,
   getDailyCheckinStatus,
   claimDailyCheckin,
   getDailyQuests,

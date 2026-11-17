@@ -112,7 +112,7 @@ export async function resolveUserRoomEntryEffect(userId, prismaInstance = prisma
     }
   } catch (_) {}
 
-  // 3. Active SVIP Entrance Privilege (SVIP Level 6+)
+  // 3. Active SVIP Entrance Privilege (SVIP Level 1 to 16, ZP-BUG-014)
   try {
     const profile = preloadedUser?.profile !== undefined
       ? preloadedUser.profile
@@ -122,22 +122,24 @@ export async function resolveUserRoomEntryEffect(userId, prismaInstance = prisma
         }).catch(() => null);
 
     const svipLvl = Number(profile?.svipLevel || 0);
-    if (svipLvl >= 6) {
-      const svipAsset = `assets/svip/svip-${svipLvl}_entry.webp`;
+    if (svipLvl >= 1) {
+      const svipAsset = `assets/svip/svip${svipLvl}_entry.webp`;
+      const isVideo = svipAsset.endsWith('.mp4');
       return {
         id: `svip_entrance_${svipLvl}`,
         assetId: `svip_entrance_${svipLvl}`,
         name: `SVIP ${svipLvl} Exclusive Entrance`,
         source: 'SVIP_PRIVILEGE',
         assetType: 'SVIP_ENTRANCE',
-        assetSubcategory: 'ENTRANCE',
+        assetSubcategory: isVideo ? 'MP4_VIDEO' : 'ANIMATED_SVGA',
+        mediaType: isVideo ? 'video/mp4' : 'image/webp',
         category: 'SVIP',
         categoryName: 'SVIP',
         thumbnailUrl: svipAsset,
         iconUrl: svipAsset,
         previewUrl: svipAsset,
-        animationUrl: svipAsset,
-        videoUrl: svipAsset,
+        animationUrl: isVideo ? null : svipAsset,
+        videoUrl: isVideo ? svipAsset : null,
         mediaUrl: svipAsset,
         soundUrl: null,
         durationSeconds: 3,
@@ -1240,16 +1242,18 @@ export async function onLeaveRoom(arg1, arg2, arg3, arg4, arg5) {
           currentViewersCount: updatedViewerCount,
           status: 'LIVE',
           roomStaysOpen: isPartyRoomType(room.roomType),
-          reason: 'HOST_AWAY',
+          isIntentional: true,
+          hostLeft: true,
+          reason: 'HOST_VOLUNTARY_LEAVE',
           message: isPartyRoomType(room.roomType)
             ? 'Host has left the room. Party continues for remaining members.'
-            : 'Host has temporarily stepped away.',
+            : 'Host has ended their broadcast.',
         };
         broadcastTarget.emit(SOCKET_EVENTS.ROOM_USER_LEFT, hostAwayPayload);
         broadcastTarget.emit('user_left', hostAwayPayload);
         broadcastTarget.emit('room:host_away', hostAwayPayload);
         broadcastTarget.emit('room:host_left', hostAwayPayload);
-        startHostAbsentTimer(room.id, room.roomType || 'AUDIO_PARTY', userId, io);
+        startHostAbsentTimer(room.id, room.roomType || 'AUDIO_PARTY', userId, io, { isIntentional: true });
       } else {
         const leftPayload = {
           roomId: room ? room.id : roomId,
@@ -1430,14 +1434,15 @@ export async function onSocketDisconnect(io, socket, db) {
                 currentViewersCount: updatedViewerCount,
                 status: 'LIVE',
                 roomStaysOpen: true,
-                reason: 'HOST_AWAY',
-                message: 'Host has left the room. Party continues for remaining members.',
+                isIntentional: false,
+                reason: 'HOST_NETWORK_DISCONNECT',
+                message: 'Host connection dropped. Reconnecting...',
               };
               broadcastTarget.emit(SOCKET_EVENTS.ROOM_USER_LEFT, hostAwayPayload);
               broadcastTarget.emit('user_left', hostAwayPayload);
               broadcastTarget.emit('room:host_away', hostAwayPayload);
               broadcastTarget.emit('room:host_left', hostAwayPayload);
-              startHostAbsentTimer(room.id, 'AUDIO_PARTY', userId, io);
+              startHostAbsentTimer(room.id, 'AUDIO_PARTY', userId, io, { isIntentional: false });
             } else {
               const hostLeftPayload = {
                 roomId,

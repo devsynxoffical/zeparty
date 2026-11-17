@@ -110,6 +110,9 @@ userProfileRouter.post('/noble/deactivate', authenticate, userController.postDea
 
 userProfileRouter.get('/wealth-schedule', userController.getAdminWealthSchedule);
 userProfileRouter.get('/me', authenticate, userController.getMe);
+userProfileRouter.get('/me/svip', authenticate, userController.getMySvipStatus);
+userProfileRouter.get('/me/svip/progress', authenticate, userController.getMySvipStatus);
+userProfileRouter.get('/svip/progress', authenticate, userController.getMySvipStatus);
 userProfileRouter.get('/me/profile-grid', authenticate, userController.getProfileGrid);
 userProfileRouter.put('/me/profile-edit', authenticate, userController.putProfileEdit);
 userProfileRouter.get('/me/daily-checkin', authenticate, userController.getDailyCheckinStatus);

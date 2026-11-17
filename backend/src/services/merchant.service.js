@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import prisma from '../config/database.js';
 import merchantRepository from '../repositories/merchant.repository.js';
 import { generate7DigitUserId } from '../utils/idGenerator.util.js';
+import { applySvipPointsForRecharge } from './recharge.service.js';
 
 function hashSecret(secret) {
   return crypto.createHash('sha256').update(secret).digest('hex');
@@ -706,6 +707,18 @@ export async function executeMerchantRecharge(merchantUserId, { recipientId, amo
         reason: `Merchant Recharge from ${merchant.companyName}: ${notes || 'Recharge transfer'}`,
       },
     });
+
+    // 5. Accrue cumulative SVIP points for recipient user (ZP-BUG-015)
+    // Wholesale inventory restocking for Coin Sellers does NOT award SVIP points.
+    // Qualifying points are only awarded for direct end-user recharges to spendable coinBalance.
+    if (!isCoinSeller) {
+      await applySvipPointsForRecharge({
+        userId: recipient.id,
+        coinsRecharged: amt,
+        db: tx,
+        referenceId: txRefId,
+      });
+    }
 
     return {
       merchantId: merchant.id,

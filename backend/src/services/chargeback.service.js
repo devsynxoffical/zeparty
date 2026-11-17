@@ -3,6 +3,7 @@ import walletRepository from '../repositories/wallet.repository.js';
 import ledgerService from './ledger.service.js';
 import { sanitizeFinancial } from '../utils/bigint.util.js';
 import prisma from '../config/database.js';
+import { reverseSvipPointsForRefund } from './recharge.service.js';
 
 export async function getChargebacks({ status, userId, gateway, page = 1, limit = 20 }) {
   const items = await chargebackRepository.findAllChargebacks({ status, userId, gateway, page, limit });
@@ -218,6 +219,14 @@ export async function resolveChargeback({ id, action, adminNotes, adminId, isOwn
           referenceId: `CBK-${chargeback.disputeId}`,
           transactionType: 'CHARGEBACK_REVERSAL',
           db: tx,
+        });
+
+        // Reverse cumulative SVIP points on chargeback (ZP-BUG-015)
+        await reverseSvipPointsForRefund({
+          userId: chargeback.userId,
+          coinsDeducted: coinsToDebit,
+          db: tx,
+          referenceId: `CBK-${chargeback.disputeId}`,
         });
       }
 

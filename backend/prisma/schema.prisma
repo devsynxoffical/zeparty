@@ -201,6 +201,8 @@ enum AssetType {
   BADGE
   VEHICLE
   SOUND_EFFECT
+  HOMEPAGE_SKIN
+  PROFILE_CARD
 }
 
 enum AssetSubcategory {
@@ -416,6 +418,12 @@ model UserProfile {
   totalEarnedDiamonds BigInt   @default(0)
   vipLevel            Int      @default(0)
   svipLevel           Int      @default(0)
+  svipPoints          BigInt   @default(0)
+  cumulativeRechargedCoins BigInt @default(0)
+  equippedSkinId      String?
+  profileSkinUrl      String?
+  equippedProfileCardId String?
+  profileCardUrl      String?
   nobleRank           String?
   isPrivate           Boolean  @default(false)
   followersCount      Int      @default(0)
@@ -677,6 +685,16 @@ model AuditLog {
 
   @@index([adminId, createdAt(sort: Desc)])
   @@index([targetEntity, targetEntityId])
+}
+
+model SvipTransactionIdempotency {
+  id          String   @id @default(uuid())
+  referenceId String   @unique
+  userId      String
+  coins       BigInt
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
 }
 
 // ==========================================

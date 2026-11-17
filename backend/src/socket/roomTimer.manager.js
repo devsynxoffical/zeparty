@@ -197,7 +197,7 @@ export async function checkAndSchedulePartyRoomSleep(roomId, io = null, delayMs 
  * @param {string} hostUserId
  * @param {import('socket.io').Server} [io]
  */
-export async function startHostAbsentTimer(roomId, roomType, hostUserId, io) {
+export async function startHostAbsentTimer(roomId, roomType, hostUserId, io, { isIntentional = false } = {}) {
   if (!roomId) return;
 
   // Clear any existing timer for this room
@@ -220,13 +220,18 @@ export async function startHostAbsentTimer(roomId, roomType, hostUserId, io) {
     const absentPayload = {
       roomId,
       hostUserId,
-      hostAbsent: true,
+      hostAbsent: !isIntentional,
+      hostLeft: true,
+      isIntentional,
+      reason: isIntentional ? 'HOST_VOLUNTARY_LEAVE' : 'HOST_NETWORK_DISCONNECT',
       roomStaysOpen: true,
       activeCount,
       willSleepIfEmptyInSeconds: scheduled ? Math.round(DEFAULT_PARTY_SLEEP_DELAY_MS / 1000) : null,
-      message: activeCount > 0
+      message: isIntentional
         ? 'Host has left the room. The party room remains open for all members.'
-        : 'Room is empty and will go to sleep in 12 seconds.',
+        : (activeCount > 0
+            ? 'Host has disconnected. The party room remains open for all members.'
+            : 'Room is empty and will go to sleep in 12 seconds.'),
     };
 
     if (io) {

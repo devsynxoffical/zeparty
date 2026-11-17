@@ -611,7 +611,8 @@ export async function getUserBackpack(userId, db = prisma) {
         });
       }
 
-      if (svipLvl >= 6) {
+      // Add eligible SVIP Vehicles (SVIP 1-16)
+      if (svipLvl >= 1) {
         const svipVehicleAsset = `assets/svip/svip${svipLvl}_entry.webp`;
         const hasVehicle = serialized.some((s) => s.asset?.imageUrl === svipVehicleAsset || s.assetId === `assigned-asset-svip${svipLvl}-vehicle`);
         if (!hasVehicle) {
@@ -636,6 +637,60 @@ export async function getUserBackpack(userId, db = prisma) {
             },
           });
         }
+      }
+
+      // Add eligible SVIP Homepage Skins (Phase 1)
+      const svipSkinAsset = `assets/svip/svip${svipLvl}_card.webp`;
+      const hasSkin = serialized.some((s) => s.asset?.imageUrl === svipSkinAsset || s.assetId === `assigned-asset-svip${svipLvl}-skin`);
+      if (!hasSkin) {
+        const isSkinEquipped = user.profile?.profileSkinUrl === svipSkinAsset || (!user.profile?.profileSkinUrl && user.profile?.equippedSkinId !== 'none');
+        serialized.push({
+          id: `assigned-skin-svip${svipLvl}-${user.id}`,
+          userId: user.id,
+          assetId: `assigned-asset-svip${svipLvl}-skin`,
+          isEquipped: isSkinEquipped,
+          expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+          isExpired: false,
+          asset: {
+            id: `assigned-asset-svip${svipLvl}-skin`,
+            name: `SVIP ${svipLvl} Homepage Skin`,
+            categoryId: 'Themes',
+            assetType: 'HOMEPAGE_SKIN',
+            imageUrl: svipSkinAsset,
+            iconUrl: svipSkinAsset,
+            thumbnailUrl: svipSkinAsset,
+            priceCoins: '0',
+            validDays: 365,
+            isActive: true,
+          },
+        });
+      }
+
+      // Add eligible SVIP Profile Cards (Phase 2)
+      const svipCardAsset = `assets/svip/svip${svipLvl}_profilecard.webp`;
+      const hasCard = serialized.some((s) => s.asset?.imageUrl === svipCardAsset || s.assetId === `assigned-asset-svip${svipLvl}-card`);
+      if (!hasCard) {
+        const isCardEquipped = user.profile?.profileCardUrl === svipCardAsset || (!user.profile?.profileCardUrl && user.profile?.equippedProfileCardId !== 'none');
+        serialized.push({
+          id: `assigned-card-svip${svipLvl}-${user.id}`,
+          userId: user.id,
+          assetId: `assigned-asset-svip${svipLvl}-card`,
+          isEquipped: isCardEquipped,
+          expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+          isExpired: false,
+          asset: {
+            id: `assigned-asset-svip${svipLvl}-card`,
+            name: `SVIP ${svipLvl} Profile Card`,
+            categoryId: 'Cards',
+            assetType: 'PROFILE_CARD',
+            imageUrl: svipCardAsset,
+            iconUrl: svipCardAsset,
+            thumbnailUrl: svipCardAsset,
+            priceCoins: '0',
+            validDays: 365,
+            isActive: true,
+          },
+        });
       }
 
       const svipTagAsset = `assets/svip/svip${svipLvl}_tag.png`;
@@ -693,6 +748,103 @@ export async function equipAsset(userId, userAssetId, { ipAddress } = {}, db = p
       const svipMatch = userAssetId.match(/svip(\d+)/i);
       const lvl = svipMatch ? svipMatch[1] : '6';
       matchedItem = { key: `svip${lvl}_tag`, name: `SVIP ${lvl} VIP Tag`, asset: `assets/svip/svip${lvl}_tag.png` };
+    } else if (userAssetId.includes('-skin') || userAssetId.startsWith('assigned-skin-')) {
+      itemType = 'HOMEPAGE_SKIN';
+      itemCategory = 'Themes';
+      const svipMatch = userAssetId.match(/svip(\d+)/i);
+      const lvl = svipMatch ? svipMatch[1] : (userAssetId.match(/-skin-(\d+)/) ? userAssetId.match(/-skin-(\d+)/)[1] : '6');
+      matchedItem = { key: `svip${lvl}_skin`, name: `SVIP ${lvl} Homepage Skin`, asset: `assets/svip/svip${lvl}_card.webp` };
+
+      // Authoritative SVIP Entitlement Verification (ZP-BUG-012)
+      const userRecord = await db.user.findUnique({
+        where: { id: userId },
+        include: { profile: true },
+      });
+      if (!userRecord) {
+        const error = new Error('User not found');
+        error.statusCode = 404;
+        error.code = 'USER_NOT_FOUND';
+        throw error;
+      }
+      const reqLvl = parseInt(lvl, 10);
+      if (isNaN(reqLvl) || reqLvl < 1 || reqLvl > 16) {
+        const error = new Error('Invalid SVIP skin tier');
+        error.statusCode = 400;
+        error.code = 'INVALID_ASSET_ID';
+        throw error;
+      }
+      const userSvip = Number(userRecord.profile?.svipLevel || 0);
+      if (userSvip < 1) {
+        const error = new Error('You do not have an active SVIP entitlement to equip this skin');
+        error.statusCode = 403;
+        error.code = 'INSUFFICIENT_SVIP_TIER';
+        throw error;
+      }
+      if (userSvip < reqLvl) {
+        const error = new Error(`Your SVIP tier (SVIP ${userSvip}) is insufficient to equip SVIP ${reqLvl} Homepage Skin`);
+        error.statusCode = 403;
+        error.code = 'INSUFFICIENT_SVIP_TIER';
+        throw error;
+      }
+      // Reject forged user suffix in synthetic ID (IDOR prevention)
+      const skinPrefix = `assigned-skin-svip${reqLvl}-`;
+      if (userAssetId.startsWith(skinPrefix)) {
+        const suffixUserId = userAssetId.substring(skinPrefix.length);
+        if (suffixUserId && suffixUserId !== userId) {
+          const error = new Error('You are not authorized to equip this asset');
+          error.statusCode = 403;
+          error.code = 'FORBIDDEN_ASSET_ACCESS';
+          throw error;
+        }
+      }
+    } else if (userAssetId.includes('-card') || userAssetId.startsWith('assigned-card-')) {
+      itemType = 'PROFILE_CARD';
+      itemCategory = 'Cards';
+      const svipMatch = userAssetId.match(/svip(\d+)/i);
+      const lvl = svipMatch ? svipMatch[1] : (userAssetId.match(/-card-(\d+)/) ? userAssetId.match(/-card-(\d+)/)[1] : '6');
+      matchedItem = { key: `svip${lvl}_card`, name: `SVIP ${lvl} Profile Card`, asset: `assets/svip/svip${lvl}_profilecard.webp` };
+
+      // Authoritative SVIP Entitlement Verification for Profile Card
+      const userRecord = await db.user.findUnique({
+        where: { id: userId },
+        include: { profile: true },
+      });
+      if (!userRecord) {
+        const error = new Error('User not found');
+        error.statusCode = 404;
+        error.code = 'USER_NOT_FOUND';
+        throw error;
+      }
+      const reqLvl = parseInt(lvl, 10);
+      if (isNaN(reqLvl) || reqLvl < 1 || reqLvl > 16) {
+        const error = new Error('Invalid SVIP profile card tier');
+        error.statusCode = 400;
+        error.code = 'INVALID_ASSET_ID';
+        throw error;
+      }
+      const userSvip = Number(userRecord.profile?.svipLevel || 0);
+      if (userSvip < 1) {
+        const error = new Error('You do not have an active SVIP entitlement to equip this profile card');
+        error.statusCode = 403;
+        error.code = 'INSUFFICIENT_SVIP_TIER';
+        throw error;
+      }
+      if (userSvip < reqLvl) {
+        const error = new Error(`Your SVIP tier (SVIP ${userSvip}) is insufficient to equip SVIP ${reqLvl} Profile Card`);
+        error.statusCode = 403;
+        error.code = 'INSUFFICIENT_SVIP_TIER';
+        throw error;
+      }
+      const cardPrefix = `assigned-card-svip${reqLvl}-`;
+      if (userAssetId.startsWith(cardPrefix)) {
+        const suffixUserId = userAssetId.substring(cardPrefix.length);
+        if (suffixUserId && suffixUserId !== userId) {
+          const error = new Error('You are not authorized to equip this asset');
+          error.statusCode = 403;
+          error.code = 'FORBIDDEN_ASSET_ACCESS';
+          throw error;
+        }
+      }
     } else {
       // Default to FRAME
       itemType = 'FRAME';
@@ -749,6 +901,19 @@ export async function equipAsset(userId, userAssetId, { ipAddress } = {}, db = p
         },
         include: { asset: true },
       });
+    }
+
+    // Persist skin & profile card to UserProfile (ZP-BUG-012, ZP-BUG-013)
+    if (itemType === 'HOMEPAGE_SKIN') {
+      await db.userProfile.update({
+        where: { userId },
+        data: { equippedSkinId: assetId, profileSkinUrl: matchedItem.asset },
+      }).catch(() => {});
+    } else if (itemType === 'PROFILE_CARD') {
+      await db.userProfile.update({
+        where: { userId },
+        data: { equippedProfileCardId: assetId, profileCardUrl: matchedItem.asset },
+      }).catch(() => {});
     }
 
     // Invalidate profile cache in Redis and remove unequipped flag
@@ -885,6 +1050,8 @@ export async function unequipAsset(userId, userAssetId, { ipAddress } = {}, db =
     else if (idStr.includes('bubble')) assetType = 'CHAT_BUBBLE';
     else if (idStr.includes('vehicle') || idStr.includes('ride')) assetType = 'VEHICLE';
     else if (idStr.includes('effect') || idStr.includes('entry')) assetType = 'ENTRY_EFFECT';
+    else if (idStr.includes('skin')) assetType = 'HOMEPAGE_SKIN';
+    else if (idStr.includes('card')) assetType = 'PROFILE_CARD';
     else assetType = 'FRAME';
   }
 
@@ -907,6 +1074,19 @@ export async function unequipAsset(userId, userAssetId, { ipAddress } = {}, db =
   // Ensure all assets of this type are unequipped in database
   if (assetType) {
     await userAssetRepository.unequipAssetsByType(userId, assetType, db);
+  }
+
+  // Clear skin / card fields from UserProfile if applicable
+  if (assetType === 'HOMEPAGE_SKIN') {
+    await db.userProfile.update({
+      where: { userId },
+      data: { equippedSkinId: null, profileSkinUrl: null },
+    }).catch(() => {});
+  } else if (assetType === 'PROFILE_CARD') {
+    await db.userProfile.update({
+      where: { userId },
+      data: { equippedProfileCardId: null, profileCardUrl: null },
+    }).catch(() => {});
   }
 
   await logAudit({

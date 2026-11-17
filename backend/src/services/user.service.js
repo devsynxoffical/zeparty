@@ -1,5 +1,6 @@
 import wealthLevelService from './wealthLevel.service.js';
 import nobleService from './noble.service.js';
+import rechargeService from './recharge.service.js';
 import prisma from '../config/database.js';
 import userRepository from '../repositories/user.repository.js';
 import userAssetRepository from '../repositories/userAsset.repository.js';
@@ -511,6 +512,8 @@ export async function getSelfProfile(userId, db = prisma) {
   let equippedBubble = '';
   let equippedRide = '';
   let equippedTheme = '';
+  let equippedSkin = '';
+  let equippedCard = '';
   const customTitles = [];
 
   for (const ua of equippedUserAssets) {
@@ -527,6 +530,10 @@ export async function getSelfProfile(userId, db = prisma) {
       equippedRide = url;
     } else if (type === 'ENTRY_EFFECT') {
       equippedTheme = url;
+    } else if (type === 'HOMEPAGE_SKIN') {
+      equippedSkin = url;
+    } else if (type === 'PROFILE_CARD') {
+      equippedCard = url;
     } else if (type === 'BADGE') {
       customTitles.push(asset.name);
     }
@@ -670,6 +677,9 @@ export async function getSelfProfile(userId, db = prisma) {
   const selfIsVip = Boolean(selfSvipLevel > 0 || selfVipLevel > 0);
   const selfSvipTag = selfSvipLevel > 0 ? ('assets/svip/svip' + selfSvipLevel + '_tag.png') : null;
   const selfVipDisplay = selfSvipLevel > 0 ? ('SVIP ' + selfSvipLevel) : (selfVipLevel > 0 ? ('VIP ' + selfVipLevel) : '0');
+  const selfSkinUrl = user.profile?.profileSkinUrl || equippedSkin || (selfSvipLevel > 0 ? `assets/svip/svip${selfSvipLevel}_card.webp` : null);
+  const selfCardUrl = user.profile?.profileCardUrl || equippedCard || activeNobleSelf?.cardAsset || (selfSvipLevel > 0 ? `assets/svip/svip${selfSvipLevel}_profilecard.webp` : null);
+  const selfSvipPoints = user.profile?.svipPoints != null ? Number(user.profile.svipPoints) : 0;
   const { activeRoleTags, roleTags, badgeGallery } = resolveActiveRoleTagsAndBadges(user, activeNobleSelf);
   if (profileWithPresence) {
     profileWithPresence.nobleRank = selfNobleRank;
@@ -680,6 +690,10 @@ export async function getSelfProfile(userId, db = prisma) {
     profileWithPresence.noble = activeNobleSelf;
     profileWithPresence.activeNoble = activeNobleSelf;
     profileWithPresence.svipLevel = selfSvipLevel;
+    profileWithPresence.svipPoints = selfSvipPoints;
+    profileWithPresence.profileSkinUrl = selfSkinUrl;
+    profileWithPresence.homepageSkinUrl = selfSkinUrl;
+    profileWithPresence.profileCardUrl = selfCardUrl;
     profileWithPresence.vipLevel = selfVipDisplay;
     profileWithPresence.isVip = selfIsVip;
     profileWithPresence.svipTag = selfSvipTag;
@@ -734,6 +748,11 @@ export async function getSelfProfile(userId, db = prisma) {
     noble: activeNobleSelf,
     activeNoble: activeNobleSelf,
     svipLevel: selfSvipLevel,
+    svipPoints: selfSvipPoints,
+    profileSkinUrl: selfSkinUrl,
+    homepageSkinUrl: selfSkinUrl,
+    equippedSkin: selfSkinUrl,
+    profileCardUrl: selfCardUrl,
     vipLevel: selfVipDisplay,
     isVip: selfIsVip,
     svipTag: selfSvipTag,
@@ -880,6 +899,8 @@ export async function getPublicProfile(userId, db = prisma) {
   let equippedBubble = '';
   let equippedRide = '';
   let equippedTheme = '';
+  let equippedSkin = '';
+  let equippedCard = '';
   const customTitles = [];
 
   for (const ua of equippedUserAssets) {
@@ -896,6 +917,10 @@ export async function getPublicProfile(userId, db = prisma) {
       equippedRide = url;
     } else if (type === 'ENTRY_EFFECT') {
       equippedTheme = url;
+    } else if (type === 'HOMEPAGE_SKIN') {
+      equippedSkin = url;
+    } else if (type === 'PROFILE_CARD') {
+      equippedCard = url;
     } else if (type === 'BADGE') {
       customTitles.push(asset.name);
     }
@@ -1002,6 +1027,9 @@ export async function getPublicProfile(userId, db = prisma) {
   const pubIsVip = Boolean(pubSvipLevel > 0 || pubVipLevel > 0);
   const pubSvipTag = pubSvipLevel > 0 ? ('assets/svip/svip' + pubSvipLevel + '_tag.png') : null;
   const pubVipDisplay = pubSvipLevel > 0 ? ('SVIP ' + pubSvipLevel) : (pubVipLevel > 0 ? ('VIP ' + pubVipLevel) : '0');
+  const pubSkinUrl = publicUser.profile?.profileSkinUrl || equippedSkin || (pubSvipLevel > 0 ? `assets/svip/svip${pubSvipLevel}_card.webp` : null);
+  const pubCardUrl = publicUser.profile?.profileCardUrl || equippedCard || activeNoblePub?.cardAsset || (pubSvipLevel > 0 ? `assets/svip/svip${pubSvipLevel}_profilecard.webp` : null);
+  const pubSvipPoints = publicUser.profile?.svipPoints != null ? Number(publicUser.profile.svipPoints) : 0;
   const { activeRoleTags, roleTags, badgeGallery } = resolveActiveRoleTagsAndBadges(publicUser, activeNoblePub);
   if (profileWithPresence) {
     profileWithPresence.nobleRank = pubNobleRank;
@@ -1012,6 +1040,10 @@ export async function getPublicProfile(userId, db = prisma) {
     profileWithPresence.noble = activeNoblePub;
     profileWithPresence.activeNoble = activeNoblePub;
     profileWithPresence.svipLevel = pubSvipLevel;
+    profileWithPresence.svipPoints = pubSvipPoints;
+    profileWithPresence.profileSkinUrl = pubSkinUrl;
+    profileWithPresence.homepageSkinUrl = pubSkinUrl;
+    profileWithPresence.profileCardUrl = pubCardUrl;
     profileWithPresence.vipLevel = pubVipDisplay;
     profileWithPresence.isVip = pubIsVip;
     profileWithPresence.svipTag = pubSvipTag;
@@ -1040,6 +1072,11 @@ export async function getPublicProfile(userId, db = prisma) {
     noble: activeNoblePub,
     activeNoble: activeNoblePub,
     svipLevel: pubSvipLevel,
+    svipPoints: pubSvipPoints,
+    profileSkinUrl: pubSkinUrl,
+    homepageSkinUrl: pubSkinUrl,
+    equippedSkin: pubSkinUrl,
+    profileCardUrl: pubCardUrl,
     vipLevel: pubVipDisplay,
     isVip: pubIsVip,
     svipTag: pubSvipTag,
@@ -2106,6 +2143,30 @@ export async function getRoomUserProfileCard(targetUserId, viewerUserId, db = pr
   const cardNobleRank = activeNobleCard ? activeNobleCard.nobleRank : null;
   const { activeRoleTags, roleTags, badgeGallery } = resolveActiveRoleTagsAndBadges(user, activeNobleCard);
 
+  // Phase 1: Authoritative Homepage Skin Resolution (ZP-BUG-012)
+  const resolvedHomepageSkinUrl = user.profile?.profileSkinUrl || (effectiveSvipLevel > 0 ? `assets/svip/svip${effectiveSvipLevel}_card.webp` : null);
+
+  // Phase 2: Authoritative Profile Card Resolution (ZP-BUG-013)
+  let resolvedProfileCardUrl = null;
+  let resolvedCardSource = 'DEFAULT';
+  let resolvedCardType = 'DEFAULT';
+
+  if (user.profile?.profileCardUrl) {
+    resolvedProfileCardUrl = user.profile.profileCardUrl;
+    resolvedCardSource = 'EQUIPPED';
+    resolvedCardType = 'CUSTOM';
+  } else if (activeNobleCard && activeNobleCard.cardAsset) {
+    resolvedProfileCardUrl = activeNobleCard.cardAsset;
+    resolvedCardSource = 'NOBLE_PRIVILEGE';
+    resolvedCardType = 'NOBLE';
+  } else if (effectiveSvipLevel > 0) {
+    resolvedProfileCardUrl = `assets/svip/svip${effectiveSvipLevel}_profilecard.webp`;
+    resolvedCardSource = 'SVIP_PRIVILEGE';
+    resolvedCardType = 'SVIP';
+  }
+
+  const svipPointsNum = user.profile?.svipPoints != null ? Number(user.profile.svipPoints) : 0;
+
   return {
     id: user.id,
     userId: user.id,
@@ -2114,6 +2175,14 @@ export async function getRoomUserProfileCard(targetUserId, viewerUserId, db = pr
     avatarUrl: user.avatarUrl,
     avatarFrame: equippedFrame,
     equippedFrame: equippedFrame,
+    profileSkinUrl: resolvedHomepageSkinUrl,
+    homepageSkinUrl: resolvedHomepageSkinUrl,
+    profileCardUrl: resolvedProfileCardUrl,
+    profileCard: {
+      url: resolvedProfileCardUrl,
+      type: resolvedCardType,
+      source: resolvedCardSource,
+    },
     gender: user.gender || 'Not Specified',
     dob: user.dob || null,
     dateOfBirth: user.dob || null,
@@ -2131,6 +2200,7 @@ export async function getRoomUserProfileCard(targetUserId, viewerUserId, db = pr
     gameLevel: 1,
     vipLevel: effectiveSvipLevel > 0 ? ('SVIP ' + effectiveSvipLevel) : (user.profile?.vipLevel ? ('VIP ' + user.profile.vipLevel) : '0'),
     svipLevel: effectiveSvipLevel,
+    svipPoints: svipPointsNum,
     isVip: Boolean(effectiveSvipLevel > 0 || user.profile?.vipLevel),
     svipTag: effectiveSvipLevel > 0 ? ('assets/svip/svip' + effectiveSvipLevel + '_tag.png') : null,
     nobleRank: cardNobleRank || 'NONE',
@@ -2146,6 +2216,14 @@ export async function getRoomUserProfileCard(targetUserId, viewerUserId, db = pr
       avatarUrl: user.avatarUrl,
       avatarFrame: equippedFrame,
       equippedFrame: equippedFrame,
+      profileSkinUrl: resolvedHomepageSkinUrl,
+      homepageSkinUrl: resolvedHomepageSkinUrl,
+      profileCardUrl: resolvedProfileCardUrl,
+      profileCard: {
+        url: resolvedProfileCardUrl,
+        type: resolvedCardType,
+        source: resolvedCardSource,
+      },
       country: user.countryCode || 'GLOBAL',
       activeRoleTags,
       roleTags,
@@ -2159,8 +2237,9 @@ export async function getRoomUserProfileCard(targetUserId, viewerUserId, db = pr
       charmLevel: effectiveCharm,
       charmXp: effectiveCharmXp,
       gameLevel: 1,
-    vipLevel: effectiveSvipLevel > 0 ? ('SVIP ' + effectiveSvipLevel) : (user.profile?.vipLevel ? ('VIP ' + user.profile.vipLevel) : '0'),
+      vipLevel: effectiveSvipLevel > 0 ? ('SVIP ' + effectiveSvipLevel) : (user.profile?.vipLevel ? ('VIP ' + user.profile.vipLevel) : '0'),
       svipLevel: effectiveSvipLevel,
+      svipPoints: svipPointsNum,
       isVip: Boolean(effectiveSvipLevel > 0 || user.profile?.vipLevel),
     svipTag: effectiveSvipLevel > 0 ? ('assets/svip/svip' + effectiveSvipLevel + '_tag.png') : null,
       nobleRank: user.profile?.nobleRank || 'NONE',
@@ -4541,6 +4620,34 @@ export async function reconcileUserWealthXP(userId, db = prisma) {
   return await wealthLevelService.reconcileUserWealth(userId, { dryRun: false }, db);
 }
 
+/**
+ * Authoritative SVIP Points & Progression Status
+ */
+export async function getUserSvipStatus(userId, db = prisma) {
+  const profile = await db.userProfile.findUnique({ where: { userId } });
+  const points = Number(profile?.svipPoints || 0n);
+  const currentLevel = profile?.svipLevel || 0;
+  const nextLevel = Math.min(16, currentLevel + 1);
+  const currentThreshold = rechargeService.getSvipTierThreshold(currentLevel);
+  const nextThreshold = rechargeService.getSvipTierThreshold(nextLevel);
+  const pointsInCurrentTier = Math.max(0, points - currentThreshold);
+  const tierSpan = Math.max(1, nextThreshold - currentThreshold);
+  const progressPercent = currentLevel >= 16 ? 100 : Math.min(100, Math.floor((pointsInCurrentTier / tierSpan) * 100));
+
+  return {
+    userId,
+    svipLevel: currentLevel,
+    svipPoints: points,
+    cumulativeRechargedCoins: Number(profile?.cumulativeRechargedCoins || 0n),
+    currentTierThreshold: currentThreshold,
+    nextTierThreshold: nextThreshold,
+    pointsToNextTier: Math.max(0, nextThreshold - points),
+    progressPercent,
+    profileSkinUrl: profile?.profileSkinUrl || (currentLevel > 0 ? `assets/svip/svip${currentLevel}_card.webp` : null),
+    profileCardUrl: profile?.profileCardUrl || (currentLevel > 0 ? `assets/svip/svip${currentLevel}_profilecard.webp` : null),
+  };
+}
+
 export async function getUserPresence(userId, db = prisma) {
   return await presenceService.getUserPresence(userId, db);
 }
@@ -4609,6 +4716,7 @@ export default {
   getNoblesCatalog,
   grantNobleTitleToUser,
   grantSVIPToUser,
+  getUserSvipStatus,
   reconcileUserWealthXP,
   resolveActiveRoleTagsAndBadges,
 };

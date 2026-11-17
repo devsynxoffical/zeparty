@@ -5,6 +5,7 @@ import ledgerService from './ledger.service.js';
 import approvalService from './approval.service.js';
 import policyService from './policy.service.js';
 import notificationService from './notification.service.js';
+import { applySvipPointsForRecharge } from './recharge.service.js';
 import { emitToUser } from '../socket/socket.emitter.js';
 import { generateReference } from '../utils/reference.util.js';
 import { generate7DigitUserId } from '../utils/idGenerator.util.js';
@@ -903,6 +904,14 @@ export async function executeSellerRechargeTransfer(
       referenceId: refId,
       transactionType: 'RECHARGE',
       db: tx,
+    });
+
+    // 4.5. Accrue cumulative SVIP points for recipient user (ZP-BUG-015)
+    await applySvipPointsForRecharge({
+      userId: verifiedRecipient.accountId,
+      coinsRecharged: coinsBigInt,
+      db: tx,
+      referenceId: refId,
     });
 
     // 5. Atomic persistent recipient notification (NEW-03)
