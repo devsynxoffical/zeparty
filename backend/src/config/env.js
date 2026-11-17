@@ -23,6 +23,7 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(16).default('super-secret-zeparty-jwt-key-change-in-prod-2026'),
   JWT_EXPIRES_IN: z.string().default('30d'),
   REFRESH_TOKEN_EXPIRES_IN: z.string().default('30d'),
+  ADMIN_JWT_EXPIRES_IN: z.string().default('8h'),
 
   // Premium games service (zeparty_games/backend). The token minted by
   // GET /v1/games/token is verified there with the same secret and issuer.

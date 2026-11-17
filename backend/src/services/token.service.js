@@ -16,8 +16,10 @@ export function generateAccessToken(payload) {
     isAdmin,
   };
 
+  const expiresIn = isAdmin ? (env.ADMIN_JWT_EXPIRES_IN || '8h') : (env.JWT_EXPIRES_IN || '30d');
+
   return jwt.sign(claims, env.JWT_SECRET, {
-    expiresIn: env.JWT_EXPIRES_IN,
+    expiresIn,
     audience,
     issuer: 'zeparty-api',
   });
@@ -67,12 +69,13 @@ export function verifyAccessToken(token, options = {}) {
 /**
  * Generate long-lived opaque refresh token and its server-side SHA256 hash.
  */
-export function generateRefreshToken() {
+export function generateRefreshToken(customTtlMs) {
   const rawToken = generateRandomToken(40);
   const tokenHash = hashToken(rawToken);
   
-  // Calculate expiration date (30 days default)
-  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  // Calculate expiration date (30 days default for mobile sessions)
+  const ttlMs = customTtlMs || (30 * 24 * 60 * 60 * 1000);
+  const expiresAt = new Date(Date.now() + ttlMs);
 
   return {
     rawToken,
