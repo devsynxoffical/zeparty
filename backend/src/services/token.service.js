@@ -71,8 +71,8 @@ export function generateRefreshToken() {
   const rawToken = generateRandomToken(40);
   const tokenHash = hashToken(rawToken);
   
-  // Calculate expiration date (7 days default)
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  // Calculate expiration date (30 days default)
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
   return {
     rawToken,

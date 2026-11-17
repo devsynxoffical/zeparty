@@ -112,13 +112,11 @@ class ApiClient {
                 final response = await dio.fetch(options);
                 return handler.resolve(response);
               } else {
-                await clearTokens();
-                _unauthorizedController.add(null);
+                // Token refresh did not succeed (e.g. transient network timeout or offline state).
+                // Do NOT wipe tokens here; preserve session credentials for retry and reject error.
                 return handler.reject(error);
               }
             } catch (refreshErr) {
-              await clearTokens();
-              _unauthorizedController.add(null);
               return handler.reject(error);
             }
           }
@@ -143,7 +141,7 @@ class ApiClient {
     );
   }
 
-  /// Concurrency-safe token refresh mechanism
+  /// Concurrency-safe token refresh mechanism with resilient network error handling
   Future<String?> _performTokenRefresh() async {
     if (_refreshCompleter != null && !_refreshCompleter!.isCompleted) {
       return _refreshCompleter!.future;
@@ -158,8 +156,14 @@ class ApiClient {
         return null;
       }
 
-      // Use a clean Dio instance to avoid interceptor recursion
-      final cleanDio = Dio(BaseOptions(baseUrl: dio.options.baseUrl));
+      // Use a clean Dio instance with robust timeouts to prevent hanging handshakes
+      final cleanDio = Dio(
+        BaseOptions(
+          baseUrl: dio.options.baseUrl,
+          connectTimeout: const Duration(seconds: 25),
+          receiveTimeout: const Duration(seconds: 25),
+        ),
+      );
       final response = await cleanDio.post(
         '/v1/auth/refresh',
         data: {'refreshToken': currentRefreshToken},
@@ -170,7 +174,7 @@ class ApiClient {
         final newAccessToken = data['accessToken'] as String?;
         final newRefreshToken = data['refreshToken'] as String?;
 
-        if (newAccessToken != null) {
+        if (newAccessToken != null && newAccessToken.isNotEmpty) {
           await saveTokens(
             accessToken: newAccessToken,
             refreshToken: newRefreshToken ?? currentRefreshToken,
@@ -183,6 +187,16 @@ class ApiClient {
       _refreshCompleter!.complete(null);
       return null;
     } catch (e) {
+      debugPrint('[ApiClient] Token refresh attempt notice: $e');
+      // Trigger logout ONLY on authoritative HTTP 401/403 rejection from the server
+      if (e is DioException) {
+        final status = e.response?.statusCode;
+        if (status == 401 || status == 403) {
+          debugPrint('[ApiClient] Refresh token explicitly rejected by server ($status). Clearing session.');
+          await clearTokens();
+          _unauthorizedController.add(null);
+        }
+      }
       _refreshCompleter!.complete(null);
       return null;
     }

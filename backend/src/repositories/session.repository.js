@@ -34,7 +34,7 @@ export async function createSession(
   // and MUST NEVER synthesize, insert, or upsert a shadow record into the mobile User table!
   if (isTargetAdmin) {
     const adminSessionId = `admin_sess_${userId}_${Date.now()}`;
-    const effectiveExpiresAt = expiresAt || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const effectiveExpiresAt = expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
     const sessionRecord = {
       id: adminSessionId,
       userId,
@@ -70,7 +70,7 @@ export async function createSession(
         refreshToken: refreshTokenHash,
         ipAddress,
         userAgent,
-        expiresAt: expiresAt || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        expiresAt: expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       },
       include: {
         user: {
@@ -87,7 +87,7 @@ export async function createSession(
       refreshToken: refreshTokenHash,
       ipAddress,
       userAgent,
-      expiresAt: expiresAt || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      expiresAt: expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     };
   }
 }

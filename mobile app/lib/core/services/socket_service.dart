@@ -527,12 +527,10 @@ class SocketService {
             connect(token: refreshedToken, user: _cachedUserData);
             return;
           } else {
-            debugPrint('[SocketService] Token refresh returned null. User account purged or session revoked. Triggering unauthorized logout.');
-            ApiClient.instance.triggerUnauthorized();
+            debugPrint('[SocketService] Token refresh did not return new token (network transient or offline). Watchdog will retry.');
           }
         } catch (refreshErr) {
-          debugPrint('[SocketService] Token refresh failed: $refreshErr');
-          ApiClient.instance.triggerUnauthorized();
+          debugPrint('[SocketService] Token refresh attempt notice: $refreshErr');
         } finally {
           _isRefreshingToken = false;
         }
