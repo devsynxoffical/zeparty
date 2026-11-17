@@ -1307,7 +1307,19 @@ export function UsersPage() {
       header: 'Last Active',
       render: (row) => (
         <span className="text-xs text-slate-400">
-          {formatDistanceToNow(row.lastActive)}
+          {row.presenceStatus === 'IN_ROOM' ? (
+            <span className="inline-flex items-center gap-1 text-purple-400 font-medium">
+              <span className="h-1.5 w-1.5 rounded-full bg-purple-400 animate-pulse" />
+              <span>In room</span>
+            </span>
+          ) : (row.presenceStatus === 'ONLINE' || row.isOnline) ? (
+            <span className="inline-flex items-center gap-1 text-emerald-400 font-medium">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+              <span>Active now</span>
+            </span>
+          ) : (
+            formatDistanceToNow(row.lastActive)
+          )}
         </span>
       ),
     },

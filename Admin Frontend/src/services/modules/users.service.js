@@ -42,7 +42,31 @@ function formatUserRecord(u) {
     isHost: Boolean(u.isHost || hostProfile.id || u.userType === 'HOST'),
     hostTier: hostProfile.hostLevel ? `Tier ${hostProfile.hostLevel}` : u.isHost ? 'Active' : null,
     registeredAt: u.createdAt || new Date().toISOString(),
-    lastActive: u.lastLoginAt || u.updatedAt || new Date().toISOString(),
+    lastActive: (() => {
+      const isCurrentlyActive = Boolean(
+        u.isOnline ||
+        u.isInRoom ||
+        u.presenceStatus === 'ONLINE' ||
+        u.presenceStatus === 'IN_ROOM' ||
+        u.presence?.isOnline ||
+        u.presence?.isInRoom
+      );
+      if (isCurrentlyActive) {
+        return new Date().toISOString();
+      }
+      return (
+        u.lastActiveAt ||
+        u.lastSeenAt ||
+        u.lastActive ||
+        u.presence?.lastActiveAt ||
+        u.presence?.lastSeenAt ||
+        u.lastLoginAt ||
+        u.updatedAt ||
+        new Date().toISOString()
+      );
+    })(),
+    lastActiveAt: u.lastActiveAt || u.lastSeenAt || u.presence?.lastActiveAt || u.presence?.lastSeenAt || u.lastLoginAt || null,
+    lastSeenAt: u.lastSeenAt || u.presence?.lastSeenAt || u.lastLoginAt || null,
     avatarUrl: u.avatarUrl || null,
     devices: (u.devices || []).map((d) => ({
       id: d.id,

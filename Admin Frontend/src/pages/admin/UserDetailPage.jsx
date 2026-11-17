@@ -862,7 +862,24 @@ export function UserDetailPage() {
                   </span>
                 } />
                 <InfoRow label="Registration Date" value={formatDate(user.registeredAt)} />
-                <InfoRow label="Last Active" value={timeAgo(user.lastActive)} />
+                <InfoRow
+                  label="Last Active"
+                  value={
+                    user.presenceStatus === 'IN_ROOM' ? (
+                      <span className="inline-flex items-center gap-1.5 text-purple-400 font-bold">
+                        <span className="h-2 w-2 rounded-full bg-purple-400 animate-pulse" />
+                        In Room
+                      </span>
+                    ) : (user.presenceStatus === 'ONLINE' || user.isOnline) ? (
+                      <span className="inline-flex items-center gap-1.5 text-emerald-400 font-bold">
+                        <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                        Active now
+                      </span>
+                    ) : (
+                      timeAgo(user.lastActive)
+                    )
+                  }
+                />
                 <InfoRow label="Wealth Level" value={`Lv. ${user.wealthLevel || 1} (${formatNumber(user.wealthXp || user.totalGifted || 0)} XP)`} valueClass="text-yellow-400 font-bold" />
                 <InfoRow label="Charm Level" value={`Lv. ${user.charmLevel || 1} (${formatNumber(user.charmXp || user.diamonds || 0)} Diamonds)`} valueClass="text-cyan-400 font-bold" />
                 <InfoRow label="SVIP Tier" value={user.svipLevel || 'None'} valueClass="text-indigo-400 font-bold" />

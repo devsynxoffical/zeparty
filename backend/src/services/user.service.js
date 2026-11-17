@@ -65,21 +65,40 @@ export async function listUsersForAdmin(filters, db = prisma) {
       result.users.map(async (u) => {
         try {
           const pres = await presenceService.getUserPresence(u.id, db);
+          const isUserActiveNow = Boolean(
+            pres.isOnline ||
+            pres.isInRoom ||
+            pres.presenceStatus === 'ONLINE' ||
+            pres.presenceStatus === 'IN_ROOM'
+          );
+          const effectiveLastActive = isUserActiveNow
+            ? new Date().toISOString()
+            : (pres.lastActiveAt || pres.lastSeenAt || u.lastLoginAt || u.updatedAt || null);
+
           return {
             ...u,
             presenceStatus: pres.presenceStatus,
             currentRoomId: pres.currentRoomId,
             currentRoomTitle: pres.currentRoomTitle,
+            currentRoom: pres.currentRoom || null,
             isOnline: Boolean(pres.isOnline),
             isInRoom: Boolean(pres.isInRoom),
+            lastActiveAt: effectiveLastActive,
+            lastSeenAt: pres.lastSeenAt || effectiveLastActive,
+            presence: pres,
           };
         } catch (_) {
           return {
             ...u,
             presenceStatus: 'OFFLINE',
             currentRoomId: null,
+            currentRoomTitle: null,
+            currentRoom: null,
             isOnline: false,
             isInRoom: false,
+            lastActiveAt: u.lastLoginAt || u.updatedAt || null,
+            lastSeenAt: u.lastLoginAt || u.updatedAt || null,
+            presence: null,
           };
         }
       })
@@ -106,12 +125,26 @@ export async function getUserDetailsForAdmin(userId, db = prisma) {
     presence = await presenceService.getUserPresence(userId, db);
   } catch (_) {}
 
+  const isUserActiveNow = Boolean(
+    presence?.isOnline ||
+    presence?.isInRoom ||
+    presence?.presenceStatus === 'ONLINE' ||
+    presence?.presenceStatus === 'IN_ROOM'
+  );
+  const effectiveLastActive = isUserActiveNow
+    ? new Date().toISOString()
+    : (presence?.lastActiveAt || presence?.lastSeenAt || user.lastLoginAt || user.updatedAt || null);
+
   return {
     ...user,
     presenceStatus: presence?.presenceStatus || 'OFFLINE',
     currentRoomId: presence?.currentRoomId || null,
     currentRoomTitle: presence?.currentRoomTitle || null,
     currentRoom: presence?.currentRoom || null,
+    isOnline: Boolean(presence?.isOnline),
+    isInRoom: Boolean(presence?.isInRoom),
+    lastActiveAt: effectiveLastActive,
+    lastSeenAt: presence?.lastSeenAt || effectiveLastActive,
     presence: presence || {
       userId,
       presenceStatus: 'OFFLINE',
@@ -119,6 +152,8 @@ export async function getUserDetailsForAdmin(userId, db = prisma) {
       isInRoom: false,
       currentRoomId: null,
       currentRoomTitle: null,
+      lastSeenAt: user.lastLoginAt || user.updatedAt || null,
+      lastActiveAt: user.lastLoginAt || user.updatedAt || null,
     },
     wallet: user.wallet
       ? {
