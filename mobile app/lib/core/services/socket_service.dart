@@ -578,6 +578,13 @@ class SocketService {
       }
     });
 
+    _socket!.on('room:user_avatar_updated', (data) {
+      debugPrint('[SocketService] Received room:user_avatar_updated realtime event: $data');
+      if (data != null && data is Map) {
+        _userProfileUpdatedController.add(Map<String, dynamic>.from(data));
+      }
+    });
+
     _socket!.on('room:user_frame_updated', (data) {
       debugPrint('[SocketService] Received room:user_frame_updated realtime event: $data');
       if (data != null && data is Map) {

@@ -105,6 +105,12 @@ class AuthProvider extends ChangeNotifier {
       final targetUserId = data['userId']?.toString();
       if (_currentUser != null && (_currentUser!.id == targetUserId || targetUserId == null)) {
         debugPrint('[AuthProvider] Received real-time profile update from socket, refreshing profile...');
+        final newAvatar = data['avatarUrl']?.toString() ?? (data['user'] is Map ? data['user']['avatarUrl']?.toString() : null);
+        if (newAvatar != null && newAvatar.isNotEmpty) {
+          _currentUser = _currentUser!.copyWith(avatarUrl: newAvatar);
+          _saveUserLocalSession(_currentUser!);
+          notifyListeners();
+        }
         refreshCurrentUser();
       }
     });

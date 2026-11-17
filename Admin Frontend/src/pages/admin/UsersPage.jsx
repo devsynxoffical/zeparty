@@ -2,7 +2,8 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Users, Search, Filter, Eye, Ban, DollarSign, UserCheck, Plus, Edit2, Trash2, CheckCircle2, AlertTriangle, ChevronDown, History, ArrowUpRight, ArrowDownRight,
-  CheckSquare, Square, Download, ShieldCheck, ShieldAlert, RotateCcw, Clock
+  CheckSquare, Square, Download, ShieldCheck, ShieldAlert, RotateCcw, Clock,
+  Upload, Image as ImageIcon, Clipboard, X
 } from 'lucide-react';
 import { DataTable } from '../../components/tables/DataTable';
 import { Badge, StatusBadge } from '../../components/ui/Badge';
@@ -29,6 +30,7 @@ import {
   getUsers,
   createUser,
   updateUser,
+  uploadAvatarMedia,
   deleteUser,
   restoreUser,
   purgeUser,
@@ -287,6 +289,11 @@ function CreateUserModal({ isOpen, onClose, onConfirm }) {
 function EditUserModal({ isOpen, onClose, user, onConfirm }) {
   const [displayName, setDisplayName] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
+  const [stagedAvatarFile, setStagedAvatarFile] = useState(null);
+  const [avatarPreview, setAvatarPreview] = useState('');
+  const [avatarSource, setAvatarSource] = useState('current');
+  const [isDragging, setIsDragging] = useState(false);
+  const avatarFileRef = React.useRef(null);
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [countryCode, setCountryCode] = useState('PK');
@@ -299,6 +306,9 @@ function EditUserModal({ isOpen, onClose, user, onConfirm }) {
     if (isOpen && user) {
       setDisplayName(user.displayName || '');
       setAvatarUrl(user.avatarUrl || '');
+      setAvatarPreview(user.avatarUrl || '');
+      setStagedAvatarFile(null);
+      setAvatarSource('current');
       let rawCountry = (user.countryCode || user.country || '').toUpperCase();
       if (rawCountry && !COUNTRY_PHONE_CONFIG[rawCountry]) {
         const rawPhone = user.phone || '';
@@ -343,13 +353,18 @@ function EditUserModal({ isOpen, onClose, user, onConfirm }) {
     setIsSaving(true);
     setError('');
     try {
+      let finalAvatar = avatarUrl.trim();
+      if (stagedAvatarFile) {
+        finalAvatar = await uploadAvatarMedia(stagedAvatarFile, user.id);
+      }
+
       const formattedPhone = phone.trim()
         ? toE164(phone.trim(), countryCode || 'PK')
         : undefined;
 
       await onConfirm(user.id, {
         displayName: displayName.trim() || user.username,
-        avatarUrl: avatarUrl.trim() || undefined,
+        avatarUrl: finalAvatar || undefined,
         phone: formattedPhone,
         email: email.trim() || undefined,
         countryCode: countryCode ? countryCode.trim().toUpperCase() : null,
@@ -438,26 +453,124 @@ function EditUserModal({ isOpen, onClose, user, onConfirm }) {
           onChange={(e) => setEmail(e.target.value)}
         />
 
-        <div className="space-y-1.5">
-          <Input
-            label="Avatar Image URL"
-            value={avatarUrl}
-            onChange={(e) => setAvatarUrl(e.target.value)}
-            placeholder="https://example.com/avatar.jpg"
-          />
-          {avatarUrl && (
-            <div className="flex items-center gap-2 pt-1">
-              <img
-                src={avatarUrl}
-                alt="Preview"
-                className="h-8 w-8 rounded-full object-cover border border-slate-700 ring-1 ring-indigo-500"
-                onError={(e) => {
-                  e.target.style.display = 'none';
-                }}
-              />
-              <span className="text-[11px] text-slate-400">Avatar Preview</span>
+        <div
+          className="space-y-2 rounded-xl bg-slate-900/40 border border-slate-800 p-3"
+          onPaste={(e) => {
+            const items = e.clipboardData?.items;
+            if (items) {
+              for (let i = 0; i < items.length; i++) {
+                if (items[i].type.indexOf('image') !== -1) {
+                  const blob = items[i].getAsFile();
+                  if (blob) {
+                    e.preventDefault();
+                    setStagedAvatarFile(blob);
+                    setAvatarPreview(URL.createObjectURL(blob));
+                    setAvatarSource('clipboard');
+                    setAvatarUrl('');
+                    return;
+                  }
+                }
+              }
+            }
+          }}
+        >
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-semibold text-slate-300">
+              Profile Avatar
+            </label>
+            {avatarSource === 'clipboard' && (
+              <span className="text-[10px] text-emerald-400 font-medium flex items-center gap-1">
+                <Clipboard className="h-3 w-3" /> Clipboard Image
+              </span>
+            )}
+            {avatarSource === 'gallery' && (
+              <span className="text-[10px] text-indigo-400 font-medium flex items-center gap-1">
+                <ImageIcon className="h-3 w-3" /> Gallery File
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="relative group/editavatar shrink-0">
+              <div className="h-12 w-12 rounded-full overflow-hidden border border-slate-700 ring-2 ring-indigo-500/30 bg-slate-800 flex items-center justify-center">
+                {avatarPreview ? (
+                  <img
+                    src={avatarPreview}
+                    alt="Preview"
+                    className="h-full w-full object-cover"
+                    onError={(e) => { e.target.style.display = 'none'; }}
+                  />
+                ) : (
+                  <span className="text-white text-base font-bold">
+                    {displayName?.charAt(0) || user.username?.charAt(0) || 'U'}
+                  </span>
+                )}
+              </div>
+              {stagedAvatarFile && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStagedAvatarFile(null);
+                    setAvatarPreview(user.avatarUrl || '');
+                    setAvatarUrl(user.avatarUrl || '');
+                    setAvatarSource('current');
+                  }}
+                  className="absolute -top-1 -right-1 p-0.5 bg-red-500 text-white rounded-full shadow"
+                  title="Remove staged image"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
             </div>
-          )}
+
+            <div className="flex-1 space-y-1.5">
+              <div className="flex items-center gap-2">
+                <input
+                  type="file"
+                  ref={avatarFileRef}
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file && file.type.startsWith('image/')) {
+                      setStagedAvatarFile(file);
+                      setAvatarPreview(URL.createObjectURL(file));
+                      setAvatarSource('gallery');
+                      setAvatarUrl('');
+                    }
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="xs"
+                  onClick={() => avatarFileRef.current?.click()}
+                  className="flex items-center gap-1 text-[11px]"
+                >
+                  <Upload className="h-3 w-3" /> Import from Gallery
+                </Button>
+                <span className="text-[10px] text-slate-500">or Ctrl+V to paste image</span>
+              </div>
+
+              <Input
+                value={avatarUrl}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setAvatarUrl(val);
+                  if (val.trim()) {
+                    setStagedAvatarFile(null);
+                    setAvatarPreview(val.trim());
+                    setAvatarSource('url');
+                  } else {
+                    setAvatarPreview(user.avatarUrl || '');
+                    setAvatarSource('current');
+                  }
+                }}
+                placeholder="Or paste avatar URL (https://...)"
+                className="text-xs h-7"
+              />
+            </div>
+          </div>
         </div>
 
         {error && (
@@ -1280,13 +1393,31 @@ export function UsersPage() {
     },
     {
       key: 'vip',
-      header: 'VIP',
-      render: (row) =>
-        row.vip ? (
-          <Badge variant="warning">{row.vipLevel}</Badge>
-        ) : (
-          <span className="text-xs text-slate-500">—</span>
-        ),
+      header: 'VIP / Noble',
+      render: (row) => (
+        <div className="flex flex-col gap-1 items-start">
+          {row.vip && (
+            <Badge variant="warning">{row.vipLevel}</Badge>
+          )}
+          {row.nobleRank && row.nobleRank !== 'NONE' && (
+            <span
+              className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20"
+              title={`Noble Rank: ${row.nobleRank}`}
+            >
+              <img
+                src={`/assets/nobles/${row.nobleRank.toLowerCase()}_badge.webp`}
+                alt={row.nobleRank}
+                className="h-3.5 w-3.5 object-contain"
+                onError={(e) => { e.target.style.display = 'none'; }}
+              />
+              <span>{row.nobleRank}</span>
+            </span>
+          )}
+          {!row.vip && (!row.nobleRank || row.nobleRank === 'NONE') && (
+            <span className="text-xs text-slate-500">—</span>
+          )}
+        </div>
+      ),
     },
     {
       key: 'coins',

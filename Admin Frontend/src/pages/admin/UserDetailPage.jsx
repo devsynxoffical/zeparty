@@ -10,7 +10,8 @@ import {
   ArrowLeft, Mail, Globe, Phone, Building, ShieldCheck, ShieldAlert,
   Smartphone, Lock, RefreshCw, Key, Award, Sparkles, AlertTriangle,
   Coins, Diamond, CheckCircle, XCircle, Slash, MessageSquare, Heart,
-  Share2, Trash2, FileText, Camera, Eye, Film, Play, ExternalLink, Crown
+  Share2, Trash2, FileText, Camera, Eye, Film, Play, ExternalLink, Crown,
+  Upload, Image as ImageIcon, Clipboard, Check, X
 } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import { Badge, StatusBadge } from '../../components/ui/Badge';
@@ -23,6 +24,7 @@ import { DataTable } from '../../components/tables/DataTable';
 import {
   getUserById,
   updateUser,
+  uploadAvatarMedia,
   updateUserStatus,
   getPropsCatalog,
   grantPropToUser,
@@ -121,6 +123,11 @@ export function UserDetailPage() {
   const [newCountry, setNewCountry] = useState('PK');
   const [newRegion, setNewRegion] = useState('South Asia');
   const [newAvatarInput, setNewAvatarInput] = useState('');
+  const [stagedAvatarFile, setStagedAvatarFile] = useState(null);
+  const [avatarPreview, setAvatarPreview] = useState('');
+  const [avatarSource, setAvatarSource] = useState('current'); // 'current', 'gallery', 'clipboard', 'url'
+  const [isDraggingAvatar, setIsDraggingAvatar] = useState(false);
+  const avatarFileInputRef = React.useRef(null);
   const [isSavingAvatar, setIsSavingAvatar] = useState(false);
   const [isViewerOpen, setIsViewerOpen] = useState(false);
 
@@ -172,20 +179,33 @@ export function UserDetailPage() {
     if (!user) return;
     setIsSavingAvatar(true);
     try {
-      await updateUser(user.id, { avatarUrl: newAvatarInput.trim() });
-      setUser({ ...user, avatarUrl: newAvatarInput.trim() });
-      showToast('Profile picture updated successfully in database.', 'success', 'Avatar Updated');
+      let finalAvatarUrl = newAvatarInput.trim();
+
+      if (stagedAvatarFile) {
+        finalAvatarUrl = await uploadAvatarMedia(stagedAvatarFile, user.id);
+      }
+
+      if (!finalAvatarUrl) {
+        showToast('Please select an image file, paste a copied image, or enter an image URL.', 'error', 'Missing Avatar');
+        setIsSavingAvatar(false);
+        return;
+      }
+
+      await updateUser(user.id, { avatarUrl: finalAvatarUrl });
+      setUser({ ...user, avatarUrl: finalAvatarUrl });
+      showToast('Profile picture updated successfully in database and synced to mobile.', 'success', 'Avatar Updated');
       await logEvent({
         action: 'USER_AVATAR_UPDATED',
         targetId: user.id,
         targetType: 'USER',
         operatorName: 'Super Admin',
-        reason: actionReason || 'Updated profile picture via admin panel',
+        reason: actionReason || (avatarSource === 'clipboard' ? 'Pasted clipboard image via admin' : avatarSource === 'gallery' ? 'Uploaded gallery image via admin' : 'Updated profile picture via admin panel'),
         riskLevel: 'LOW',
         status: 'SUCCESS'
       });
       setModalAction(null);
       setActionReason('');
+      setStagedAvatarFile(null);
     } catch (err) {
       console.error('Failed to update avatar on backend:', err);
       showToast(err.message || 'Failed to update profile picture', 'error', 'Update Failed');
@@ -630,6 +650,9 @@ export function UserDetailPage() {
                   setIsViewerOpen(true);
                 } else {
                   setNewAvatarInput('');
+                  setAvatarPreview('');
+                  setStagedAvatarFile(null);
+                  setAvatarSource('current');
                   setModalAction('update_avatar');
                 }
               }}
@@ -714,6 +737,9 @@ export function UserDetailPage() {
               size="sm"
               onClick={() => {
                 setNewAvatarInput(user.avatarUrl || '');
+                setAvatarPreview(user.avatarUrl || '');
+                setStagedAvatarFile(null);
+                setAvatarSource('current');
                 setModalAction('update_avatar');
               }}
             >
@@ -883,7 +909,25 @@ export function UserDetailPage() {
                 <InfoRow label="Wealth Level" value={`Lv. ${user.wealthLevel || 1} (${formatNumber(user.wealthXp || user.totalGifted || 0)} XP)`} valueClass="text-yellow-400 font-bold" />
                 <InfoRow label="Charm Level" value={`Lv. ${user.charmLevel || 1} (${formatNumber(user.charmXp || user.diamonds || 0)} Diamonds)`} valueClass="text-cyan-400 font-bold" />
                 <InfoRow label="SVIP Tier" value={user.svipLevel || 'None'} valueClass="text-indigo-400 font-bold" />
-                <InfoRow label="Noble Title" value={user.nobleRank ? `👑 ${user.nobleRank}` : 'None'} valueClass="text-purple-400 font-bold" />
+                <InfoRow
+                  label="Noble Title"
+                  value={
+                    user.nobleRank && user.nobleRank !== 'NONE' ? (
+                      <span className="inline-flex items-center gap-1.5 font-bold text-amber-300">
+                        <img
+                          src={`/assets/nobles/${user.nobleRank.toLowerCase()}_badge.webp`}
+                          alt={user.nobleRank}
+                          className="h-5 w-5 object-contain inline-block drop-shadow"
+                          onError={(e) => { e.target.style.display = 'none'; }}
+                        />
+                        <span>👑 {user.nobleRank}</span>
+                      </span>
+                    ) : (
+                      'None'
+                    )
+                  }
+                  valueClass="text-purple-400 font-bold"
+                />
               </div>
             </Card>
 
@@ -1586,28 +1630,81 @@ export function UserDetailPage() {
 
             {/* Nobles Grid */}
             <div className="space-y-2">
-              <label className="text-xs font-semibold text-slate-300 block">
-                Select Configured Noble Title
-              </label>
-              <div className="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-slate-300 block">
+                  Select Configured Noble Title
+                </label>
+                <span className="text-[11px] text-slate-400">
+                  {noblesCatalog?.length || 0} Official Tiers Configured
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2.5 max-h-72 overflow-y-auto pr-1">
                 {(Array.isArray(noblesCatalog) ? noblesCatalog : []).map((noble) => {
                   const isSelected = selectedNoble?.tier === noble.tier;
+                  const badgeAssetUrl = noble.badgeAsset
+                    ? (noble.badgeAsset.startsWith('/') ? noble.badgeAsset : `/${noble.badgeAsset}`)
+                    : `/assets/nobles/${(noble.id || noble.title || '').toLowerCase()}_badge.webp`;
+                  const frameAssetUrl = noble.frameAsset
+                    ? (noble.frameAsset.startsWith('/') ? noble.frameAsset : `/${noble.frameAsset}`)
+                    : `/assets/nobles/${(noble.id || noble.title || '').toLowerCase()}_frame.webp`;
+
                   return (
                     <div
                       key={noble.tier}
                       onClick={() => setSelectedNoble(noble)}
-                      className={`p-3 rounded-xl border cursor-pointer transition-all ${
+                      style={{
+                        borderColor: isSelected ? (noble.color || '#A855F7') : undefined,
+                        boxShadow: isSelected ? `0 0 15px -3px ${noble.color || '#A855F7'}40` : undefined,
+                      }}
+                      className={`p-3 rounded-xl border cursor-pointer transition-all relative group ${
                         isSelected
-                          ? 'bg-purple-950/40 border-purple-400 shadow-lg ring-1 ring-purple-400'
+                          ? 'bg-purple-950/40 border-purple-400 ring-1 ring-purple-400'
                           : 'bg-slate-900 border-slate-800 hover:border-slate-700'
                       }`}
                     >
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-xl">{noble.badgeIcon}</span>
-                        <Badge variant={isSelected ? 'purple' : 'outline'}>Tier {noble.tier}</Badge>
+                      <div className="flex items-center justify-between mb-2">
+                        {/* Real Noble Badge Crest & Frame Preview */}
+                        <div className="relative h-11 w-11 rounded-lg bg-slate-950/80 border border-slate-800 flex items-center justify-center p-1 shrink-0 overflow-hidden">
+                          <img
+                            src={badgeAssetUrl}
+                            alt={noble.title}
+                            className="h-full w-full object-contain drop-shadow"
+                            onError={(e) => {
+                              e.target.style.display = 'none';
+                              if (e.target.nextSibling) e.target.nextSibling.style.display = 'inline';
+                            }}
+                          />
+                          <span className="text-xl hidden">{noble.badgeIcon}</span>
+                        </div>
+
+                        {/* Tier & Store Price Badge */}
+                        <div className="flex flex-col items-end gap-1">
+                          <span
+                            className="text-[10px] font-bold px-2 py-0.5 rounded border uppercase tracking-wider"
+                            style={{
+                              borderColor: `${noble.color || '#A855F7'}55`,
+                              color: noble.color || '#E2E8F0',
+                              backgroundColor: `${noble.color || '#A855F7'}15`,
+                            }}
+                          >
+                            Tier {noble.tier}
+                          </span>
+                          {noble.monthlyPriceCoins && (
+                            <span className="text-[10px] font-mono text-amber-300 font-semibold flex items-center gap-0.5">
+                              🪙 {Number(noble.monthlyPriceCoins).toLocaleString()}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <p className="font-bold text-white text-sm">{noble.title}</p>
-                      <p className="text-[10px] text-slate-400 mt-1 line-clamp-2">
+
+                      {/* Title & Royal Privileges */}
+                      <p
+                        className="font-bold text-sm leading-tight"
+                        style={{ color: isSelected ? (noble.color || '#FFFFFF') : '#FFFFFF' }}
+                      >
+                        {noble.title}
+                      </p>
+                      <p className="text-[10px] text-slate-400 mt-1 line-clamp-2 leading-relaxed">
                         {noble.privileges?.join(' · ') || 'Royal Privileges'}
                       </p>
                     </div>
@@ -1818,35 +1915,192 @@ export function UserDetailPage() {
       {modalAction === 'update_avatar' && (
         <Modal
           isOpen={true}
-          onClose={() => setModalAction(null)}
+          onClose={() => {
+            setModalAction(null);
+            setStagedAvatarFile(null);
+          }}
           title={`Update Profile Picture — @${user.username}`}
-          size="sm"
+          size="md"
         >
-          <div className="space-y-4 text-xs text-slate-300">
+          <div
+            className="space-y-4 text-xs text-slate-300"
+            onPaste={(e) => {
+              const items = e.clipboardData?.items;
+              if (items) {
+                for (let i = 0; i < items.length; i++) {
+                  if (items[i].type.indexOf('image') !== -1) {
+                    const blob = items[i].getAsFile();
+                    if (blob) {
+                      e.preventDefault();
+                      setStagedAvatarFile(blob);
+                      const objectUrl = URL.createObjectURL(blob);
+                      setAvatarPreview(objectUrl);
+                      setAvatarSource('clipboard');
+                      setNewAvatarInput('');
+                      showToast('Image pasted from clipboard!', 'info', 'Clipboard Image');
+                      return;
+                    }
+                  }
+                }
+              }
+            }}
+          >
             <p>
-              Set a new avatar image URL for <strong className="text-white">{user.displayName}</strong>.
+              Set a new avatar image for <strong className="text-white">{user.displayName}</strong>. You can import from gallery, drag and drop, paste any copied image (<kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-slate-200 font-mono text-[10px]">Ctrl + V</kbd>), or enter an image URL.
             </p>
 
-            {newAvatarInput && (
-              <div className="flex justify-center my-2">
-                <img
-                  src={newAvatarInput}
-                  alt="Preview"
-                  className="h-20 w-20 rounded-full object-cover ring-2 ring-indigo-500 shadow-md"
-                  onError={(e) => {
-                    e.target.style.display = 'none';
-                  }}
-                />
-              </div>
-            )}
+            {/* Central Avatar Live Preview with Source Tag & Remove Option */}
+            <div className="flex flex-col items-center justify-center py-2">
+              <div className="relative group/preview">
+                <div className="h-24 w-24 rounded-full overflow-hidden border-2 border-indigo-500/60 ring-4 ring-indigo-500/20 shadow-xl bg-slate-900 flex items-center justify-center">
+                  {avatarPreview ? (
+                    <img
+                      src={avatarPreview}
+                      alt="Avatar Preview"
+                      className="h-full w-full object-cover"
+                      onError={(e) => {
+                        e.target.style.display = 'none';
+                      }}
+                    />
+                  ) : (
+                    <div className="h-full w-full flex items-center justify-center bg-indigo-600/30 text-indigo-200 text-2xl font-bold">
+                      {user.displayName?.charAt(0)?.toUpperCase() || user.username?.charAt(0)?.toUpperCase() || 'U'}
+                    </div>
+                  )}
+                </div>
 
-            <Input
-              label="Avatar Image URL"
-              placeholder="https://example.com/avatar.jpg"
-              value={newAvatarInput}
-              onChange={(e) => setNewAvatarInput(e.target.value)}
-              required
-            />
+                {stagedAvatarFile && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStagedAvatarFile(null);
+                      setAvatarPreview(user.avatarUrl || '');
+                      setAvatarSource('current');
+                      setNewAvatarInput(user.avatarUrl || '');
+                    }}
+                    className="absolute -top-1 -right-1 p-1 bg-red-500 hover:bg-red-600 text-white rounded-full shadow-lg transition-colors"
+                    title="Remove selected image"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Status Badge */}
+              <div className="mt-2 flex items-center gap-1.5">
+                {avatarSource === 'clipboard' && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    <Clipboard className="h-3 w-3" /> Pasted from Clipboard
+                  </span>
+                )}
+                {avatarSource === 'gallery' && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                    <ImageIcon className="h-3 w-3" /> Imported from Gallery ({stagedAvatarFile ? `${Math.round(stagedAvatarFile.size / 1024)} KB` : ''})
+                  </span>
+                )}
+                {avatarSource === 'url' && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                    <Globe className="h-3 w-3" /> Image URL Link
+                  </span>
+                )}
+                {avatarSource === 'current' && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-700/50 text-slate-300 border border-slate-600/40">
+                    Current Avatar
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Interactive Drop & Paste Zone */}
+            <div
+              onClick={() => avatarFileInputRef.current?.click()}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsDraggingAvatar(true);
+              }}
+              onDragLeave={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsDraggingAvatar(false);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsDraggingAvatar(false);
+                const file = e.dataTransfer.files?.[0];
+                if (file && file.type.startsWith('image/')) {
+                  setStagedAvatarFile(file);
+                  setAvatarPreview(URL.createObjectURL(file));
+                  setAvatarSource('gallery');
+                  setNewAvatarInput('');
+                  showToast('Image loaded from device!', 'info', 'Image Loaded');
+                } else if (file) {
+                  showToast('Please drop an image file (JPG, PNG, WEBP, GIF).', 'error', 'Invalid File');
+                }
+              }}
+              className={`p-4 rounded-xl border-2 border-dashed cursor-pointer transition-all text-center flex flex-col items-center justify-center gap-2 ${
+                isDraggingAvatar
+                  ? 'border-indigo-400 bg-indigo-500/10'
+                  : 'border-slate-700 hover:border-indigo-500/60 bg-slate-900/60 hover:bg-slate-900'
+              }`}
+            >
+              <input
+                type="file"
+                ref={avatarFileInputRef}
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    if (!file.type.startsWith('image/')) {
+                      showToast('Please select an image file (JPG, PNG, WEBP, GIF).', 'error', 'Invalid File');
+                      return;
+                    }
+                    setStagedAvatarFile(file);
+                    setAvatarPreview(URL.createObjectURL(file));
+                    setAvatarSource('gallery');
+                    setNewAvatarInput('');
+                    showToast('Image selected from gallery!', 'info', 'Image Selected');
+                  }
+                }}
+              />
+              <div className="p-2.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                <Upload className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-slate-200">
+                  Click to import from gallery or drag & drop image here
+                </p>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Or press <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-slate-200 font-mono text-[10px]">Ctrl + V</kbd> anywhere to paste copied screenshot/image
+                </p>
+              </div>
+              <span className="text-[10px] text-slate-500">Supports JPG, PNG, WEBP, GIF (up to 10 MB)</span>
+            </div>
+
+            {/* URL Input Fallback */}
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-300 block">
+                Or Avatar Image URL
+              </label>
+              <Input
+                placeholder="https://example.com/avatar.jpg"
+                value={newAvatarInput}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setNewAvatarInput(val);
+                  if (val.trim()) {
+                    setStagedAvatarFile(null);
+                    setAvatarPreview(val.trim());
+                    setAvatarSource('url');
+                  } else {
+                    setAvatarPreview(user?.avatarUrl || '');
+                    setAvatarSource('current');
+                  }
+                }}
+              />
+            </div>
 
             <Input
               label="Audit Reason for Update"
@@ -1856,11 +2110,25 @@ export function UserDetailPage() {
             />
 
             <div className="flex justify-end gap-3 pt-2">
-              <Button variant="outline" size="sm" onClick={() => setModalAction(null)} disabled={isSavingAvatar}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setModalAction(null);
+                  setStagedAvatarFile(null);
+                }}
+                disabled={isSavingAvatar}
+              >
                 Cancel
               </Button>
-              <Button variant="primary" size="sm" onClick={handleAvatarChange} isLoading={isSavingAvatar}>
-                Save Avatar
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleAvatarChange}
+                isLoading={isSavingAvatar}
+                disabled={!stagedAvatarFile && !newAvatarInput.trim()}
+              >
+                {isSavingAvatar ? 'Uploading & Saving...' : 'Save Avatar'}
               </Button>
             </div>
           </div>

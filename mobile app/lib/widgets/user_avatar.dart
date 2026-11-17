@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/theme/app_colors.dart';
 import '../core/animations/app_animations.dart';
 import '../core/utils/noble_badge_helper.dart';
+import '../core/services/api_client.dart';
 
 class UserAvatar extends StatelessWidget {
   final String? imageUrl;
@@ -31,6 +32,7 @@ class UserAvatar extends StatelessWidget {
     final trimmed = url.trim();
     if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return true;
     if (trimmed.startsWith('assets/')) return true;
+    if (trimmed.startsWith('/uploads/') || trimmed.startsWith('uploads/')) return true;
     if (trimmed.startsWith('/') || trimmed.startsWith('file://')) return true;
     try {
       final f = File(trimmed.replaceFirst('file://', ''));
@@ -85,7 +87,11 @@ class UserAvatar extends StatelessWidget {
 
     Widget avatarContent;
     if (hasValidImage) {
-      final clean = imageUrl!.trim().replaceFirst('file://', '');
+      String clean = imageUrl!.trim().replaceFirst('file://', '');
+      if (clean.startsWith('/uploads/') || clean.startsWith('uploads/')) {
+        final server = ApiClient.baseUrl;
+        clean = '$server/${clean.replaceFirst(RegExp(r'^/+'), '')}';
+      }
       if (clean.startsWith('http://') || clean.startsWith('https://')) {
         avatarContent = Image.network(
           clean,

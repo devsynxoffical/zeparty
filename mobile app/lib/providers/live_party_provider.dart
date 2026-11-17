@@ -274,6 +274,7 @@ class LivePartyProvider extends ChangeNotifier {
   StreamSubscription? _socketPkActiveSub;
   StreamSubscription? _socketConnectionSub;
   StreamSubscription? _socketUserFrameSub;
+  StreamSubscription? _socketUserProfileSub;
   StreamSubscription? _socketUserRemovedFromMicSub;
 
   bool get isSocketConnected => _socketService.isConnected;
@@ -2581,6 +2582,16 @@ class LivePartyProvider extends ChangeNotifier {
       }
     });
 
+    // Realtime User Profile / Avatar Synchronization
+    _socketUserProfileSub?.cancel();
+    _socketUserProfileSub = _socketService.onUserProfileUpdated.listen((data) {
+      final targetUserId = data['userId']?.toString();
+      final avatarUrl = data['avatarUrl']?.toString() ?? (data['user'] is Map ? data['user']['avatarUrl']?.toString() : null);
+      if (targetUserId != null && avatarUrl != null && avatarUrl.isNotEmpty) {
+        syncUserAvatar(targetUserId, avatarUrl);
+      }
+    });
+
     // 15. Mic Invitation Realtime Events (Change 13)
     _socketMicInviteSub?.cancel();
     _socketMicInviteSub = _socketService.onRoomMicInvite.listen((data) {
@@ -3256,6 +3267,7 @@ class LivePartyProvider extends ChangeNotifier {
     _socketRoomUserMutedSub?.cancel();
     _socketRoleUpdatedSub?.cancel();
     _socketUserFrameSub?.cancel();
+    _socketUserProfileSub?.cancel();
     _socketMicInviteSub?.cancel();
     _socketMicInviteResponseSub?.cancel();
     _socketCoHostInviteSub?.cancel();
@@ -4668,6 +4680,34 @@ class LivePartyProvider extends ChangeNotifier {
       }
     }
     if (updated) {
+      notifyListeners();
+    }
+  }
+
+  /// Synchronize updated avatar across party room seats, participants, and host
+  void syncUserAvatar(String userId, String avatarUrl) {
+    if (userId.isEmpty || avatarUrl.isEmpty) return;
+    bool updated = false;
+    for (int i = 0; i < _participants.length; i++) {
+      if (_participants[i].user.id == userId) {
+        _participants[i] = _participants[i].copyWith(
+          user: _participants[i].user.copyWith(avatarUrl: avatarUrl),
+        );
+        updated = true;
+      }
+    }
+    if (_activeRoom != null && _activeRoom!.host.id == userId) {
+      _activeRoom = _activeRoom!.copyWith(
+        host: _activeRoom!.host.copyWith(avatarUrl: avatarUrl),
+      );
+      updated = true;
+    }
+    if (_currentUser != null && _currentUser!.id == userId) {
+      _currentUser = _currentUser!.copyWith(avatarUrl: avatarUrl);
+      updated = true;
+    }
+    if (updated) {
+      debugPrint('[LivePartyProvider] Synchronized updated avatar for $userId: $avatarUrl');
       notifyListeners();
     }
   }

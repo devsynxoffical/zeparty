@@ -3,7 +3,7 @@ import storageService from '../services/storage.service.js';
 export async function uploadMedia(req, res, next) {
   try {
     const { folder = 'misc', dataBase64, mimeType } = req.body;
-    const userId = req.auth?.userId;
+    const userId = req.body.userId || req.auth?.userId;
 
     if (!dataBase64 || !mimeType) {
       return res.status(400).json({

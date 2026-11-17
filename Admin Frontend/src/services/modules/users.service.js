@@ -350,11 +350,47 @@ export async function reconcileUserWealth(userId) {
   return res.data;
 }
 
+export async function uploadAvatarMedia(file, userId) {
+  if (!file) throw new Error('No image file or blob provided');
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const base64 = e.target.result;
+        const mimeType = file.type || 'image/jpeg';
+        const payload = {
+          dataBase64: base64,
+          mimeType,
+          folder: 'avatars',
+          ...(userId ? { userId } : {}),
+        };
+
+        const res = await apiClient.post('/v1/media/upload', payload).catch(async () => {
+          return await apiClient.post('/media/upload', payload);
+        });
+
+        if (res.data && res.data.success && (res.data.data?.url || res.data.data?.cdnUrl)) {
+          resolve(res.data.data.url || res.data.data.cdnUrl);
+        } else {
+          resolve(base64);
+        }
+      } catch (err) {
+        console.warn('[UsersService] Avatar upload to server failed, falling back to base64 data URL:', err.message);
+        resolve(reader.result);
+      }
+    };
+    reader.onerror = (err) => reject(err);
+    reader.readAsDataURL(file);
+  });
+}
+
 export default {
   getUsers,
   getUserById,
   createUser,
   updateUser,
+  uploadAvatarMedia,
   changeUserCountry,
   deleteUser,
   restoreUser,

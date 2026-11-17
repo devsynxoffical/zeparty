@@ -9,7 +9,7 @@ import env from '../config/env.js';
  */
 export class StorageService {
   constructor() {
-    this.cdnBaseUrl = process.env.CDN_BASE_URL || `http://localhost:${env.PORT}/uploads`;
+    this.cdnBaseUrl = process.env.CDN_BASE_URL || (process.env.PUBLIC_API_URL ? `${process.env.PUBLIC_API_URL.replace(/\/+$/, '')}/uploads` : `http://localhost:${env.PORT}/uploads`);
     this.storageProvider = process.env.STORAGE_PROVIDER || 'local'; // 'local', 's3', 'r2'
     this.uploadDir = path.resolve(process.cwd(), 'public', 'uploads');
 

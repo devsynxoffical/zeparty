@@ -1368,7 +1368,23 @@ export async function updateUserByAdmin(
         userId,
         countryCode: userUpdate.countryCode,
         region: userUpdate.region,
+        avatarUrl: updatedUser.avatarUrl,
+        user: updatedUser,
       });
+
+      // Synchronize in-room state if target user is currently in a live party room
+      const presence = await presenceService.getUserPresence(userId, db).catch(() => null);
+      if (presence?.currentRoomId) {
+        io.to(`room:${presence.currentRoomId}`).emit('room:user_avatar_updated', {
+          userId,
+          avatarUrl: updatedUser.avatarUrl,
+        });
+        io.to(`room:${presence.currentRoomId}`).emit('user:profile_updated', {
+          userId,
+          avatarUrl: updatedUser.avatarUrl,
+          user: updatedUser,
+        });
+      }
     }
   } catch (_) {}
 
@@ -3428,6 +3444,32 @@ export async function resetUserAvatarByAdmin(
     db
   );
 
+  // Notify active sockets of this user so mobile clients update immediately
+  try {
+    const { getIO } = await import('../socket/index.js');
+    const io = getIO();
+    if (io) {
+      io.to(`user:${userId}`).emit('user:profile_updated', {
+        userId,
+        avatarUrl: defaultAvatar,
+        user: updated,
+      });
+
+      const presence = await presenceService.getUserPresence(userId, db).catch(() => null);
+      if (presence?.currentRoomId) {
+        io.to(`room:${presence.currentRoomId}`).emit('room:user_avatar_updated', {
+          userId,
+          avatarUrl: defaultAvatar,
+        });
+        io.to(`room:${presence.currentRoomId}`).emit('user:profile_updated', {
+          userId,
+          avatarUrl: defaultAvatar,
+          user: updated,
+        });
+      }
+    }
+  } catch (_) {}
+
   return {
     userId,
     avatarUrl: updated.avatarUrl,
@@ -4373,7 +4415,7 @@ export async function getNoblesCatalog() {
       frameAsset: 'assets/nobles/baron_frame.webp',
       color: '#CD7F32',
       durationDays: 30,
-      monthlyPriceCoins: 50000,
+      monthlyPriceCoins: 10000,
       description: 'Baron Aristocratic Status with room seat priority and noble badge',
       privileges: ['Aristocracy Badge', 'Noble Frame', 'Room Presence'],
     },
@@ -4393,7 +4435,7 @@ export async function getNoblesCatalog() {
       frameAsset: 'assets/nobles/viscount_frame.webp',
       color: '#AFC4D8',
       durationDays: 30,
-      monthlyPriceCoins: 150000,
+      monthlyPriceCoins: 50000,
       description: 'Viscount Aristocratic Status with room seat priority & dedicated profile card',
       privileges: ['Seat Priority', 'Viscount Silver Crest', 'Viscount Profile Card', 'Noble Frame'],
     },
@@ -4413,7 +4455,7 @@ export async function getNoblesCatalog() {
       frameAsset: 'assets/nobles/count_frame.webp',
       color: '#E24A5A',
       durationDays: 30,
-      monthlyPriceCoins: 350000,
+      monthlyPriceCoins: 100000,
       description: 'Count Aristocratic Status with chat bubble & highlight',
       privileges: ['Chat Bubble', 'Highlight Presence', 'Count Profile Card', 'Seat Priority'],
     },
@@ -4433,7 +4475,7 @@ export async function getNoblesCatalog() {
       frameAsset: 'assets/nobles/marquis_frame.webp',
       color: '#B15CFF',
       durationDays: 30,
-      monthlyPriceCoins: 750000,
+      monthlyPriceCoins: 300000,
       description: 'Marquis Aristocratic Status with custom badge & gift perks',
       privileges: ['Entrance Effect', 'Marquis Profile Card', 'Custom Badge', 'Gift Perks'],
     },
@@ -4453,7 +4495,7 @@ export async function getNoblesCatalog() {
       frameAsset: 'assets/nobles/duke_frame.webp',
       color: '#3F7CFF',
       durationDays: 30,
-      monthlyPriceCoins: 1500000,
+      monthlyPriceCoins: 800000,
       description: 'Grand Duke Status with entry announcement banner',
       privileges: ['Entry Announcement', 'Duke Profile Card', 'Mic Wave Aura', 'Grand Banner'],
     },
@@ -4473,7 +4515,7 @@ export async function getNoblesCatalog() {
       frameAsset: 'assets/nobles/king_frame.webp',
       color: '#F6C945',
       durationDays: 30,
-      monthlyPriceCoins: 3000000,
+      monthlyPriceCoins: 1500000,
       description: 'Royal King Rank with golden room banner & top seat',
       privileges: ['Golden Room Banner', 'King Profile Card', 'Top Seat', 'Global World Notification'],
     },
@@ -4493,7 +4535,7 @@ export async function getNoblesCatalog() {
       frameAsset: 'assets/nobles/emperor_frame.webp',
       color: '#FF5A4F',
       durationDays: 30,
-      monthlyPriceCoins: 6000000,
+      monthlyPriceCoins: 3000000,
       description: 'Supreme Emperor Status with platform-wide royal privileges',
       privileges: ['Supreme Status', 'Emperor Profile Card', 'Platform-wide Royal Privileges', 'Custom Mic Wave'],
     },
