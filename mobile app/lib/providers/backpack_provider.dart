@@ -95,7 +95,22 @@ class BackpackProvider extends ChangeNotifier {
       if (a.isEquipped && !a.isExpired) {
         final type = (a.asset?.assetType ?? '').toUpperCase();
         final cat = (a.asset?.categoryId ?? '').toUpperCase();
-        if (type.contains('THEME') || type.contains('BACKGROUND') || cat.contains('BACKGROUND')) {
+        final id = a.assetId.toUpperCase();
+        if (type.contains('THEME') || type.contains('BACKGROUND') || type.contains('SKIN') || cat.contains('BACKGROUND') || cat.contains('THEME') || id.contains('SKIN')) {
+          return a.asset?.imageUrl;
+        }
+      }
+    }
+    return null;
+  }
+
+  String? get equippedCardUrl {
+    for (final a in _userAssets) {
+      if (a.isEquipped && !a.isExpired) {
+        final type = (a.asset?.assetType ?? '').toUpperCase();
+        final cat = (a.asset?.categoryId ?? '').toUpperCase();
+        final id = a.assetId.toUpperCase();
+        if (type.contains('CARD') || cat.contains('CARD') || id.contains('CARD')) {
           return a.asset?.imageUrl;
         }
       }
@@ -366,6 +381,8 @@ class BackpackProvider extends ChangeNotifier {
     String userAssetId, {
     void Function(String)? onAvatarFrameChanged,
     void Function(String)? onBadgeChanged,
+    void Function(String)? onSkinChanged,
+    void Function(String)? onCardChanged,
   }) async {
     _isLoading = true;
     _errorMessage = null;
@@ -417,6 +434,10 @@ class BackpackProvider extends ChangeNotifier {
           }
         }
         onBadgeChanged?.call(badgeAsset);
+      } else if (type.contains('SKIN') || type.contains('THEME') || cat.contains('THEME') || assetName.toLowerCase().contains('skin')) {
+        onSkinChanged?.call(assetImage);
+      } else if (type.contains('CARD') || cat.contains('CARD') || assetName.toLowerCase().contains('card')) {
+        onCardChanged?.call(assetImage);
       }
     }
 
@@ -429,6 +450,8 @@ class BackpackProvider extends ChangeNotifier {
     String userAssetId, {
     void Function(String)? onAvatarFrameChanged,
     void Function(String)? onBadgeChanged,
+    void Function(String)? onSkinChanged,
+    void Function(String)? onCardChanged,
   }) async {
     _isLoading = true;
     _errorMessage = null;
@@ -452,6 +475,10 @@ class BackpackProvider extends ChangeNotifier {
         onAvatarFrameChanged?.call('none');
       } else if (type.contains('BADGE') || cat.contains('BADGE') || assetName.contains('badge')) {
         onBadgeChanged?.call('');
+      } else if (type.contains('SKIN') || type.contains('THEME') || cat.contains('THEME') || assetName.contains('skin')) {
+        onSkinChanged?.call('');
+      } else if (type.contains('CARD') || cat.contains('CARD') || assetName.contains('card')) {
+        onCardChanged?.call('');
       }
     }
 

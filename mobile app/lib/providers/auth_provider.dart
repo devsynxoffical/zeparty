@@ -131,6 +131,30 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  void updateProfileSkin(String? skin) {
+    if (_currentUser != null) {
+      final shouldClear = skin == null || skin.isEmpty || skin == 'none';
+      _currentUser = _currentUser!.copyWith(
+        profileSkinUrl: shouldClear ? null : skin,
+        clearProfileSkin: shouldClear,
+      );
+      _saveUserLocalSession(_currentUser!);
+      notifyListeners();
+    }
+  }
+
+  void updateProfileCard(String? card) {
+    if (_currentUser != null) {
+      final shouldClear = card == null || card.isEmpty || card == 'none';
+      _currentUser = _currentUser!.copyWith(
+        profileCardUrl: shouldClear ? null : card,
+        clearProfileCard: shouldClear,
+      );
+      _saveUserLocalSession(_currentUser!);
+      notifyListeners();
+    }
+  }
+
   void updateEquippedBadge(String badge) {
     if (_currentUser != null) {
       _currentUser = _currentUser!.copyWith(badge: badge);

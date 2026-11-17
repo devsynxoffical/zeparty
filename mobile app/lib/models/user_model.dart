@@ -73,6 +73,9 @@ class UserModel {
   final DateTime? lastActiveAt;
 
   final String? profileSkinUrl;
+  final String? profileCardUrl;
+  final String? equippedSkinId;
+  final String? equippedProfileCardId;
 
   bool get isInRoom => (isLive && liveRoomId != null && liveRoomId!.isNotEmpty) || (status == 'IN_ROOM');
 
@@ -234,6 +237,9 @@ class UserModel {
     this.lastActiveAt,
     this.customTitles = const [],
     this.profileSkinUrl,
+    this.profileCardUrl,
+    this.equippedSkinId,
+    this.equippedProfileCardId,
   });
 
   /// Automatically calculate exact age from date of birth securely
@@ -643,6 +649,9 @@ class UserModel {
                           : null)))),
       customTitles: json['customTitles'] != null ? List<String>.from(json['customTitles']) : [],
       profileSkinUrl: profile['profileSkinUrl']?.toString() ?? profile['skinUrl']?.toString() ?? json['profileSkinUrl']?.toString() ?? json['skinUrl']?.toString(),
+      profileCardUrl: profile['profileCardUrl']?.toString() ?? profile['cardUrl']?.toString() ?? json['profileCardUrl']?.toString() ?? json['cardUrl']?.toString(),
+      equippedSkinId: profile['equippedSkinId']?.toString() ?? json['equippedSkinId']?.toString(),
+      equippedProfileCardId: profile['equippedProfileCardId']?.toString() ?? json['equippedProfileCardId']?.toString(),
     );
   }
 
@@ -876,6 +885,11 @@ class UserModel {
     bool? isPrivate,
     List<String>? customTitles,
     String? profileSkinUrl,
+    String? profileCardUrl,
+    String? equippedSkinId,
+    String? equippedProfileCardId,
+    bool clearProfileSkin = false,
+    bool clearProfileCard = false,
   }) {
     return UserModel(
       id: id ?? this.id,
@@ -936,7 +950,10 @@ class UserModel {
       isCountryLocked: isCountryLocked ?? this.isCountryLocked,
       isPrivate: isPrivate ?? this.isPrivate,
       customTitles: customTitles ?? this.customTitles,
-      profileSkinUrl: profileSkinUrl ?? this.profileSkinUrl,
+      profileSkinUrl: clearProfileSkin ? null : (profileSkinUrl ?? this.profileSkinUrl),
+      profileCardUrl: clearProfileCard ? null : (profileCardUrl ?? this.profileCardUrl),
+      equippedSkinId: clearProfileSkin ? null : (equippedSkinId ?? this.equippedSkinId),
+      equippedProfileCardId: clearProfileCard ? null : (equippedProfileCardId ?? this.equippedProfileCardId),
     );
   }
 }

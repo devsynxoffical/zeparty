@@ -355,6 +355,7 @@ class _ChatBubbleState extends State<ChatBubble> {
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: widget.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
             if (isGift) ...[
@@ -755,9 +756,10 @@ class _ChatBubbleState extends State<ChatBubble> {
                 widget.message.text,
                 textDirection: isRTL ? TextDirection.rtl : TextDirection.ltr,
                 style: messageTextStyle,
+                softWrap: true,
               ),
             ],
-            const SizedBox(height: 4),
+            const SizedBox(height: 2),
             Padding(
               padding: isImage ? const EdgeInsets.only(right: 6, bottom: 4) : EdgeInsets.zero,
               child: Row(

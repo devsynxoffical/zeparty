@@ -6,6 +6,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../models/party_participant_model.dart';
 import '../../../models/user_model.dart';
 import '../../../providers/auth_provider.dart';
+import '../../../providers/backpack_provider.dart';
 import '../../../providers/live_party_provider.dart';
 
 import '../../../widgets/user_avatar.dart';
@@ -231,50 +232,58 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
     final giftWallCount = user.likesReceived > 0 ? user.likesReceived.clamp(0, 23) : 0;
     final outfitCount = user.customTitles.length;
 
-    // Resolve Profile Card (SVIP Profile Card, noble card, or custom skinUrl)
+    // Resolve Profile Card (Authoritative equipped custom card)
+    final backpack = context.watch<BackpackProvider>();
     String? cardAssetPath;
     String? cardNetworkUrl;
 
-    if (user.profileSkinUrl != null && user.profileSkinUrl!.isNotEmpty) {
-      if (user.profileSkinUrl!.startsWith('http://') || user.profileSkinUrl!.startsWith('https://')) {
-        cardNetworkUrl = user.profileSkinUrl;
+    // Issue B: One authoritative equipped state.
+    // If user has equipped a card in backpack or database, use it. Otherwise null.
+    final equippedCard = isMe
+        ? (backpack.equippedCardUrl ?? user.profileCardUrl)
+        : user.profileCardUrl;
+
+    if (equippedCard != null && equippedCard.isNotEmpty && equippedCard != 'none') {
+      if (equippedCard.startsWith('http://') || equippedCard.startsWith('https://')) {
+        cardNetworkUrl = equippedCard;
       } else {
-        cardAssetPath = user.profileSkinUrl;
+        cardAssetPath = equippedCard;
       }
-    }
-
-    if (cardAssetPath == null && cardNetworkUrl == null) {
-      final svipLvl = user.svipLevel;
-      if (svipLvl >= 3) {
-        cardAssetPath = _resolveSvipProfileCardAsset(svipLvl);
-      }
-    }
-
-    if (cardAssetPath == null && cardNetworkUrl == null && user.hasActiveNoble) {
-      cardAssetPath = _resolveNobleProfileCardAsset(user.nobleTitle);
     }
 
     final hasCard = cardAssetPath != null || cardNetworkUrl != null;
 
     return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFF141024),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-        boxShadow: [
-          BoxShadow(color: Colors.black87, blurRadius: 30, spreadRadius: 5),
-        ],
+      decoration: BoxDecoration(
+        color: const Color(0xFF141024),
+        borderRadius: hasCard ? BorderRadius.zero : const BorderRadius.vertical(top: Radius.circular(28)),
+        boxShadow: hasCard
+            ? null
+            : const [
+                BoxShadow(color: Colors.black87, blurRadius: 30, spreadRadius: 5),
+              ],
+        border: hasCard
+            ? null
+            : Border.all(
+                color: Colors.amberAccent.withValues(alpha: 0.3),
+                width: 1,
+              ),
       ),
       child: ClipRRect(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        borderRadius: hasCard ? BorderRadius.zero : const BorderRadius.vertical(top: Radius.circular(28)),
         child: Stack(
           children: [
             // BOTTOM LAYER: SVIP Profile Card / Noble Background
+            // Issue A: Responsive layout with BoxFit.fitWidth preserving aspect ratio without clipping
             if (hasCard) ...[
-              Positioned.fill(
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
                 child: cardNetworkUrl != null
                     ? Image.network(
                         cardNetworkUrl,
-                        fit: BoxFit.cover,
+                        fit: BoxFit.fitWidth,
                         alignment: Alignment.topCenter,
                         errorBuilder: (_, _, _) => Container(
                           color: const Color(0xFF141024),
@@ -282,14 +291,14 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                       )
                     : Image.asset(
                         cardAssetPath!,
-                        fit: BoxFit.cover,
+                        fit: BoxFit.fitWidth,
                         alignment: Alignment.topCenter,
                         errorBuilder: (_, _, _) => Container(
                           color: const Color(0xFF141024),
                         ),
                       ),
               ),
-              // MIDDLE LAYER: Subtle readability overlay to ensure crisp text contrast
+              // MIDDLE LAYER: Subtle readability overlay to ensure crisp text contrast in lower area
               Positioned.fill(
                 child: Container(
                   decoration: BoxDecoration(
@@ -297,12 +306,12 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
                       colors: [
-                        Colors.black.withValues(alpha: 0.12),
-                        Colors.black.withValues(alpha: 0.35),
-                        Colors.black.withValues(alpha: 0.65),
-                        Colors.black.withValues(alpha: 0.88),
+                        Colors.transparent,
+                        Colors.transparent,
+                        const Color(0xFF141024).withValues(alpha: 0.65),
+                        const Color(0xFF141024),
                       ],
-                      stops: const [0.0, 0.22, 0.55, 1.0],
+                      stops: const [0.0, 0.35, 0.65, 1.0],
                     ),
                   ),
                 ),
@@ -1101,26 +1110,6 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
     );
   }
 
-  static String? _resolveSvipProfileCardAsset(int level) {
-    if (level < 3) return null;
-    final clamped = level.clamp(3, 16);
-    if (clamped >= 3 && clamped <= 5) {
-      return 'assets/svip/svip-${clamped}_profilecard.webp';
-    }
-    return 'assets/svip/svip${clamped}_profilecard.webp';
-  }
-
-  static String? _resolveNobleProfileCardAsset(String? title) {
-    if (title == null || title.isEmpty) return null;
-    final t = title.toLowerCase();
-    if (t.contains('emperor')) return 'assets/nobles/tier-7-emperor_profilecard.webp';
-    if (t.contains('duke')) return 'assets/nobles/tier-5-duke_profilecard.webp';
-    if (t.contains('marquis')) return 'assets/nobles/tier-4-marquis_profilecard.webp';
-    if (t.contains('king')) return 'assets/nobles/king_card.webp';
-    if (t.contains('count')) return 'assets/nobles/count_card.webp';
-    if (t.contains('viscount')) return 'assets/nobles/viscount_card.webp';
-    return null;
-  }
 
   /// Moderation Action Button
   Widget _buildModerationActionButton({

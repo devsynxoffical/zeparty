@@ -217,10 +217,10 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
     final bubbleSpec = hasCustomBubble ? ChatBubbleConfig.getSpec(widget.chatBubble) : null;
     final safePadding = hasCustomBubble
         ? EdgeInsets.fromLTRB(
-            math.max(26.0, (bubbleSpec?.incomingInsets.left ?? 25.0) + 3.0),
-            math.max(16.0, (bubbleSpec?.incomingInsets.top ?? 15.0) + 2.0),
-            math.max(26.0, (bubbleSpec?.incomingInsets.right ?? 25.0) + 3.0),
-            math.max(16.0, (bubbleSpec?.incomingInsets.bottom ?? 13.0) + 3.0),
+            math.max(44.0, (bubbleSpec?.incomingInsets.left ?? 44.0)),
+            math.max(22.0, (bubbleSpec?.incomingInsets.top ?? 22.0)),
+            math.max(40.0, (bubbleSpec?.incomingInsets.right ?? 40.0)),
+            math.max(20.0, (bubbleSpec?.incomingInsets.bottom ?? 20.0)),
           )
         : const EdgeInsets.symmetric(horizontal: 10, vertical: 5);
 
@@ -261,8 +261,8 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
                   child: Container(
                     padding: safePadding,
                     constraints: BoxConstraints(
-                      minHeight: hasCustomBubble ? math.max(48.0, bubbleSpec?.minHeight ?? 50.0) : 0,
-                      minWidth: hasCustomBubble ? math.max(110.0, bubbleSpec?.minWidth ?? 135.0) : 0,
+                      minHeight: hasCustomBubble ? math.max(64.0, bubbleSpec?.minHeight ?? 64.0) : 0,
+                      minWidth: hasCustomBubble ? math.max(140.0, bubbleSpec?.minWidth ?? 140.0) : 0,
                       maxWidth: maxBubbleWidth,
                     ),
                     decoration: BoxDecoration(
@@ -450,13 +450,7 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
 
                               Widget buildActualGiftWidget() {
                                 if (iconPath != null && iconPath.isNotEmpty) {
-                                  const blackMatrix = <double>[
-                                    1.0, 0.0, 0.0, 0.0, 0.0,
-                                    0.0, 1.0, 0.0, 0.0, 0.0,
-                                    0.0, 0.0, 1.0, 0.0, 0.0,
-                                    3.0, 3.0, 3.0, 0.0, -45.0,
-                                  ];
-                                  final img = iconPath.startsWith('assets/')
+                                  return iconPath.startsWith('assets/')
                                       ? Image.asset(
                                           iconPath,
                                           width: 24,
@@ -473,11 +467,6 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
                                               errorBuilder: (ctx, err, stack) => const Text('🎁', style: TextStyle(fontSize: 14)),
                                             )
                                           : Text(iconPath, style: const TextStyle(fontSize: 14)));
-
-                                  return ColorFiltered(
-                                    colorFilter: const ColorFilter.matrix(blackMatrix),
-                                    child: img,
-                                  );
                                 }
                                 return const Text('🎁', style: TextStyle(fontSize: 14));
                               }

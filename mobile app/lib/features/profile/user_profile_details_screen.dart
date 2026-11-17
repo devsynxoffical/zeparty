@@ -918,60 +918,69 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
     final isFollowing = _user != null && auth.isFollowing(_user!.id);
     final isUserBlocked = _user != null && auth.isBlocked(_user!.id);
 
-    // Resolve Homepage Skin (SVIP 2-16, backpack equipped theme, or noble card)
+    // 1. Resolve Homepage Skin (Full Background Wallpaper)
     String? skinAssetPath;
     String? skinNetworkUrl;
 
-    if (_user?.profileSkinUrl != null && _user!.profileSkinUrl!.isNotEmpty) {
-      if (_user!.profileSkinUrl!.startsWith('http://') ||
-          _user!.profileSkinUrl!.startsWith('https://')) {
-        skinNetworkUrl = _user!.profileSkinUrl;
+    final userSkin = (_user?.profileSkinUrl != null && _user!.profileSkinUrl!.isNotEmpty && _user!.profileSkinUrl != 'none')
+        ? _user!.profileSkinUrl
+        : null;
+
+    if (userSkin != null) {
+      if (userSkin.startsWith('http://') || userSkin.startsWith('https://')) {
+        skinNetworkUrl = userSkin;
       } else {
-        skinAssetPath = _user!.profileSkinUrl;
+        skinAssetPath = userSkin;
       }
     }
 
     if (skinAssetPath == null && skinNetworkUrl == null && isMyProfile) {
       try {
         final backpack = context.watch<BackpackProvider>();
-        final equippedTheme = backpack.equippedThemeUrl;
-        if (equippedTheme != null && equippedTheme.isNotEmpty) {
-          if (equippedTheme.startsWith('http://') ||
-              equippedTheme.startsWith('https://')) {
-            skinNetworkUrl = equippedTheme;
+        final myTheme = backpack.equippedThemeUrl;
+        if (myTheme != null && myTheme.isNotEmpty && myTheme != 'none') {
+          if (myTheme.startsWith('http://') || myTheme.startsWith('https://')) {
+            skinNetworkUrl = myTheme;
           } else {
-            skinAssetPath = equippedTheme;
+            skinAssetPath = myTheme;
           }
         }
       } catch (_) {}
     }
 
-    if (skinAssetPath == null && skinNetworkUrl == null) {
-      int effectiveSvip = _user?.svipLevel ?? 0;
-      if (isMyProfile && svip.currentLevel > effectiveSvip) {
-        effectiveSvip = svip.currentLevel;
-      }
-      if (effectiveSvip >= 2) {
-        final clamped = effectiveSvip.clamp(2, 16);
-        skinAssetPath = 'assets/svip/svip${clamped}_card.webp';
-      }
-    }
-
-    if (skinAssetPath == null &&
-        skinNetworkUrl == null &&
-        _user != null &&
-        _user!.hasActiveNoble) {
-      final nobleTitle = _user!.nobleTitle?.toLowerCase() ?? '';
-      if (nobleTitle.contains('king')) {
-        skinAssetPath = 'assets/nobles/king_card.webp';
-      } else if (nobleTitle.contains('count')) {
-        skinAssetPath = 'assets/nobles/count_card.webp';
-      } else if (nobleTitle.contains('viscount')) {
-        skinAssetPath = 'assets/nobles/viscount_card.webp';
-      }
-    }
-
     final hasSkin = skinAssetPath != null || skinNetworkUrl != null;
+
+    // 2. Resolve Profile Card (Positioned at avatar level y: 140 matching reference image)
+    String? cardAssetPath;
+    String? cardNetworkUrl;
+
+    final userCard = (_user?.profileCardUrl != null && _user!.profileCardUrl!.isNotEmpty && _user!.profileCardUrl != 'none')
+        ? _user!.profileCardUrl
+        : null;
+
+    if (userCard != null) {
+      if (userCard.startsWith('http://') || userCard.startsWith('https://')) {
+        cardNetworkUrl = userCard;
+      } else {
+        cardAssetPath = userCard;
+      }
+    }
+
+    if (cardAssetPath == null && cardNetworkUrl == null && isMyProfile) {
+      try {
+        final backpack = context.watch<BackpackProvider>();
+        final myCard = backpack.equippedCardUrl;
+        if (myCard != null && myCard.isNotEmpty && myCard != 'none') {
+          if (myCard.startsWith('http://') || myCard.startsWith('https://')) {
+            cardNetworkUrl = myCard;
+          } else {
+            cardAssetPath = myCard;
+          }
+        }
+      } catch (_) {}
+    }
+
+    final hasCard = cardAssetPath != null || cardNetworkUrl != null;
 
     return Scaffold(
       backgroundColor: AppColors.getBackground(isDark),
@@ -1008,11 +1017,14 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
               children: [
                 // LAYER 1: BOTTOM LAYER - Full Profile Background (SVIP Homepage Skin or default fallback)
                 if (hasSkin) ...[
-                  Positioned.fill(
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
                     child: skinNetworkUrl != null
                         ? Image.network(
                             skinNetworkUrl,
-                            fit: BoxFit.cover,
+                            fit: BoxFit.fitWidth,
                             alignment: Alignment.topCenter,
                             errorBuilder: (_, _, _) => Container(
                               color: AppColors.getBackground(isDark),
@@ -1020,7 +1032,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                           )
                         : Image.asset(
                             skinAssetPath!,
-                            fit: BoxFit.cover,
+                            fit: BoxFit.fitWidth,
                             alignment: Alignment.topCenter,
                             errorBuilder: (_, _, _) => Container(
                               color: AppColors.getBackground(isDark),
@@ -1035,12 +1047,12 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
                           colors: [
-                            Colors.black.withValues(alpha: 0.10),
-                            Colors.black.withValues(alpha: 0.30),
+                            Colors.transparent,
+                            Colors.black.withValues(alpha: 0.20),
                             Colors.black.withValues(alpha: 0.65),
-                            Colors.black.withValues(alpha: 0.85),
+                            Colors.black.withValues(alpha: 0.95),
                           ],
-                          stops: const [0.0, 0.22, 0.55, 1.0],
+                          stops: const [0.0, 0.25, 0.55, 1.0],
                         ),
                       ),
                     ),
@@ -1055,10 +1067,35 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                     physics: const AlwaysScrollableScrollPhysics(
                       parent: BouncingScrollPhysics(),
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    child: Stack(
                       children: [
-                        // 1. TOP BAR & COVER + IDENTITY
+                        // PROFILE CARD LAYER: Positioned at y: 140 (avatar level) matching reference image
+                        // Crown & wings start at avatar line and span down behind identity block
+                        if (hasCard)
+                          Positioned(
+                            top: 140,
+                            left: 0,
+                            right: 0,
+                            child: cardNetworkUrl != null
+                                ? Image.network(
+                                    cardNetworkUrl,
+                                    fit: BoxFit.fitWidth,
+                                    alignment: Alignment.topCenter,
+                                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                                  )
+                                : Image.asset(
+                                    cardAssetPath!,
+                                    fit: BoxFit.fitWidth,
+                                    alignment: Alignment.topCenter,
+                                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                                  ),
+                          ),
+
+                        // MAIN PROFILE CONTENT COLUMN (Pixel-perfect Rule 1 preservation)
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // 1. TOP BAR & COVER + IDENTITY
                         _buildCoverAndIdentityHeader(
                           context,
                           isDark,
@@ -1142,8 +1179,10 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                         ), // Bottom padding for sticky action bar
                       ],
                     ),
-                  ),
+                  ],
                 ),
+              ),
+            ),
 
                 // Top Floating Navigation Bar (Safe Area Compliant)
                 SafeArea(
@@ -1534,37 +1573,31 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
         // Cover Backdrop Photo with Main Avatar & CP Mini-Avatar Decoration
         Stack(
           children: [
-            // Cover Image / Skin Decorative Header Zone
-            if (hasSkin && !hasExplicitCover)
-              const SizedBox(
-                height: 220,
-                width: double.infinity,
-              )
-            else
-              Container(
-                height: 220,
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  image: DecorationImage(
-                    image: coverImageProvider,
-                    fit: BoxFit.cover,
-                  ),
+            // Cover Image (Always visible at top, exactly matching reference image)
+            Container(
+              height: 220,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                image: DecorationImage(
+                  image: coverImageProvider,
+                  fit: BoxFit.cover,
                 ),
-                child: Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.black.withValues(alpha: 0.3),
-                        Colors.transparent,
-                        hasSkin ? Colors.transparent : AppColors.getBackground(isDark),
-                      ],
-                      stops: const [0.0, 0.6, 1.0],
-                    ),
+              ),
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withValues(alpha: 0.3),
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.4),
+                    ],
+                    stops: const [0.0, 0.6, 1.0],
                   ),
                 ),
               ),
+            ),
 
             // Avatar with Crown Frame + CP Mini-Avatar Decoration & Followers Count
             Positioned(
