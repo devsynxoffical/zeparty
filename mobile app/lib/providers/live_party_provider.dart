@@ -1988,7 +1988,6 @@ class LivePartyProvider extends ChangeNotifier {
         if (agoraUid != null) {
           _agoraService.muteRemoteAudio(agoraUid, true);
         }
-        }
 
         int pIdx = -1;
         final uClean = targetUserId.toLowerCase().replaceFirst(RegExp(r'^user_'), '');
