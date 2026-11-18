@@ -10,6 +10,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/utils/auth_guard.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/utils/noble_badge_helper.dart';
+import '../../core/utils/profile_card_helper.dart';
 import '../../models/user_model.dart';
 import '../../models/post_model.dart';
 import '../../models/medal_model.dart';
@@ -950,37 +951,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
 
     final hasSkin = skinAssetPath != null || skinNetworkUrl != null;
 
-    // 2. Resolve Profile Card (Positioned at avatar level y: 140 matching reference image)
-    String? cardAssetPath;
-    String? cardNetworkUrl;
 
-    final userCard = (_user?.profileCardUrl != null && _user!.profileCardUrl!.isNotEmpty && _user!.profileCardUrl != 'none')
-        ? _user!.profileCardUrl
-        : null;
-
-    if (userCard != null) {
-      if (userCard.startsWith('http://') || userCard.startsWith('https://')) {
-        cardNetworkUrl = userCard;
-      } else {
-        cardAssetPath = userCard;
-      }
-    }
-
-    if (cardAssetPath == null && cardNetworkUrl == null && isMyProfile) {
-      try {
-        final backpack = context.watch<BackpackProvider>();
-        final myCard = backpack.equippedCardUrl;
-        if (myCard != null && myCard.isNotEmpty && myCard != 'none') {
-          if (myCard.startsWith('http://') || myCard.startsWith('https://')) {
-            cardNetworkUrl = myCard;
-          } else {
-            cardAssetPath = myCard;
-          }
-        }
-      } catch (_) {}
-    }
-
-    final hasCard = cardAssetPath != null || cardNetworkUrl != null;
 
     return Scaffold(
       backgroundColor: AppColors.getBackground(isDark),
@@ -1067,35 +1038,10 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                     physics: const AlwaysScrollableScrollPhysics(
                       parent: BouncingScrollPhysics(),
                     ),
-                    child: Stack(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // PROFILE CARD LAYER: Positioned at y: 140 (avatar level) matching reference image
-                        // Crown & wings start at avatar line and span down behind identity block
-                        if (hasCard)
-                          Positioned(
-                            top: 140,
-                            left: 0,
-                            right: 0,
-                            child: cardNetworkUrl != null
-                                ? Image.network(
-                                    cardNetworkUrl,
-                                    fit: BoxFit.fitWidth,
-                                    alignment: Alignment.topCenter,
-                                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                                  )
-                                : Image.asset(
-                                    cardAssetPath!,
-                                    fit: BoxFit.fitWidth,
-                                    alignment: Alignment.topCenter,
-                                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                                  ),
-                          ),
-
-                        // MAIN PROFILE CONTENT COLUMN (Pixel-perfect Rule 1 preservation)
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // 1. TOP BAR & COVER + IDENTITY
+                        // 1. TOP BAR & COVER + IDENTITY
                         _buildCoverAndIdentityHeader(
                           context,
                           isDark,
@@ -1179,10 +1125,8 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                         ), // Bottom padding for sticky action bar
                       ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
 
                 // Top Floating Navigation Bar (Safe Area Compliant)
                 SafeArea(
@@ -1512,6 +1456,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
     bool hasSkin = false,
   }) {
     final auth = context.read<AuthProvider>();
+    final backpack = context.watch<BackpackProvider>();
     final currentUserId = auth.currentUser.id;
     final currentUsername = auth.currentUser.username.toLowerCase();
     final currentName = auth.currentUser.name.toLowerCase();
@@ -1534,6 +1479,10 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                     widget.userId.toLowerCase() == currentUsername)));
 
     final displayFollowers = _user!.followers;
+    final followingCount = isMyProfile
+        ? context.read<AuthProvider>().followingUserIds.length
+        : (_user?.following ?? 0);
+
     final coverUrl = _user!.effectiveCoverUrl;
     bool isLocalFile = false;
     if (coverUrl.startsWith('/') ||
@@ -1546,14 +1495,6 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
         isLocalFile = false;
       }
     }
-    final primaryText = AppColors.getTextPrimary(isDark);
-    final secondaryText = AppColors.getTextSecondary(isDark);
-
-    final hasExplicitCover = isLocalFile ||
-        (_user!.coverUrl != null &&
-            _user!.coverUrl!.isNotEmpty &&
-            _user!.coverUrl != _user!.avatarUrl &&
-            !_user!.coverUrl!.contains('unsplash'));
 
     final ImageProvider coverImageProvider = isLocalFile
         ? FileImage(File(coverUrl))
@@ -1563,19 +1504,113 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                   'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80',
                 ));
 
-    // CP Partner Mini-Avatar Decoration when active
     final hasCpPartner =
         _user!.cpPartnerId != null && _user!.cpPartnerId!.isNotEmpty;
+
+    // Resolve Authoritative Profile Card & Dynamic Theme Adaptation
+    final cardData = ProfileCardHelper.resolve(
+      user: _user,
+      isMe: isMyProfile,
+      backpack: backpack,
+    );
+
+    // Calculate real likes
+    int calculatedLikes = _user?.likesReceived ?? 0;
+    try {
+      final social = context.read<SocialProvider>();
+      final userPosts = social.posts.where(
+        (p) =>
+            (_user != null && _user!.id.isNotEmpty && p.author.id == _user!.id) ||
+            (_user != null &&
+                _user!.username.isNotEmpty &&
+                p.author.username.toLowerCase() == _user!.username.toLowerCase()),
+      ).toList();
+      final pLikes = userPosts.fold(0, (acc, p) => acc + p.likes);
+      if (pLikes > calculatedLikes) calculatedLikes = pLikes;
+    } catch (_) {}
+
+    String formatCount(int count) {
+      if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}M';
+      if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}K';
+      return '$count';
+    }
+
+    // Resolve effective Avatar
+    String? effAvatar = _user!.avatarUrl.isNotEmpty ? _user!.avatarUrl : null;
+    if (effAvatar == null || effAvatar.isEmpty) {
+      try {
+        final social = context.read<SocialProvider>();
+        final myPost = social.posts.cast<PostModel?>().firstWhere(
+          (p) =>
+              p != null &&
+              ((_user!.id.isNotEmpty && p.author.id == _user!.id) ||
+                  (_user!.displayName.isNotEmpty &&
+                      p.author.displayName.toLowerCase() ==
+                          _user!.displayName.toLowerCase()) ||
+                  (_user!.username.isNotEmpty &&
+                      p.author.username.toLowerCase() ==
+                          _user!.username.toLowerCase())),
+          orElse: () => null,
+        );
+        if (myPost != null && myPost.author.avatarUrl.isNotEmpty) {
+          effAvatar = myPost.author.avatarUrl;
+        }
+      } catch (_) {}
+    }
+
+    final bool isInActiveRoom = _user != null &&
+        _user!.isLive &&
+        (_user!.liveRoomId != null && _user!.liveRoomId!.isNotEmpty);
+
+    Widget avatarWidget = UserAvatar(
+      imageUrl: effAvatar,
+      name: _user!.displayName,
+      radius: 36,
+      showVipFrame: _user!.isVip,
+      frameAsset: _user?.avatarFrame != null &&
+              _user!.avatarFrame.isNotEmpty &&
+              _user!.avatarFrame != 'none'
+          ? _user!.avatarFrame
+          : (_user != null && _user!.hasActiveNoble
+                ? NobleBadgeHelper.getFrameAsset(_user!.nobleTitle)
+                : (_user != null && _user!.svipLevel > 0
+                      ? NobleBadgeHelper.getFrameAsset('SVIP ${_user!.svipLevel}')
+                      : null)),
+    );
+
+    if (isInActiveRoom) {
+      avatarWidget = Container(
+        padding: const EdgeInsets.all(2.5),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: const SweepGradient(
+            colors: [
+              Color(0xFFFF007F),
+              Color(0xFF7B1FA2),
+              Color(0xFF00E5FF),
+              Color(0xFFFF007F),
+            ],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFFE91E63).withValues(alpha: 0.6),
+              blurRadius: 10,
+              spreadRadius: 2,
+            ),
+          ],
+        ),
+        child: avatarWidget,
+      );
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Cover Backdrop Photo with Main Avatar & CP Mini-Avatar Decoration
+        // 1. Cover Photo
         Stack(
           children: [
-            // Cover Image (Always visible at top, exactly matching reference image)
             Container(
-              height: 220,
+              height: 200,
               width: double.infinity,
               decoration: BoxDecoration(
                 image: DecorationImage(
@@ -1589,452 +1624,434 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      Colors.black.withValues(alpha: 0.3),
+                      Colors.black.withValues(alpha: 0.35),
                       Colors.transparent,
-                      Colors.black.withValues(alpha: 0.4),
+                      Colors.black.withValues(alpha: 0.25),
                     ],
-                    stops: const [0.0, 0.6, 1.0],
+                    stops: const [0.0, 0.5, 1.0],
                   ),
                 ),
               ),
             ),
 
-            // Avatar with Crown Frame + CP Mini-Avatar Decoration & Followers Count
-            Positioned(
-              bottom: 0,
-              left: 16,
-              right: 16,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  // Main Avatar Stack with CP Mini Avatar Decoration & Click to view
-                  Stack(
-                    clipBehavior: Clip.none,
+            // In-Room Status Button on bottom right of cover photo
+            if (isInActiveRoom)
+              Positioned(
+                bottom: 34,
+                right: 16,
+                child: GestureDetector(
+                  onTap: () => _openUserActiveRoom(context, _user!.liveRoomId),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFE91E63), Color(0xFF9C27B0)],
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 1.2),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFFE91E63).withValues(alpha: 0.5),
+                          blurRadius: 8,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.graphic_eq_rounded, color: Colors.white, size: 13),
+                        SizedBox(width: 4),
+                        Text(
+                          'In Room',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        SizedBox(width: 2),
+                        Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 9),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+
+        // 2. UNIFIED PROFILE CARD CONTAINER
+        // Complete replacement: If alternative card is equipped, NO default black background and NO orange/golden border!
+        Transform.translate(
+          offset: const Offset(0, -28),
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: cardData.isDefault
+                  ? const Color(0xFF141024)
+                  : (cardData.isLight ? const Color(0xFFFAF8F5) : const Color(0xFF141024)),
+              borderRadius: BorderRadius.circular(22),
+              border: cardData.isDefault
+                  ? Border.all(color: const Color(0xFFFFB300), width: 1.5)
+                  : null, // REMOVED default orange/golden border when alternative card equipped!
+              boxShadow: const [
+                BoxShadow(
+                  color: Colors.black45,
+                  blurRadius: 16,
+                  offset: Offset(0, 6),
+                ),
+              ],
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Stack(
+              children: [
+                // Equipped Card Graphic Background (Fills entire card, replacing default design)
+                if (cardData.hasCustomCard)
+                  Positioned.fill(
+                    child: cardData.networkUrl != null
+                        ? Image.network(
+                            cardData.networkUrl!,
+                            fit: BoxFit.fill,
+                            alignment: Alignment.topCenter,
+                            errorBuilder: (_, _, _) => Container(
+                              color: const Color(0xFF141024),
+                            ),
+                          )
+                        : Image.asset(
+                            cardData.assetPath!,
+                            fit: BoxFit.fill,
+                            alignment: Alignment.topCenter,
+                            errorBuilder: (_, _, _) => Container(
+                              color: const Color(0xFF141024),
+                            ),
+                          ),
+                  ),
+
+                // Card Foreground Content
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Builder(
-                        builder: (ctx) {
-                          String? effAvatar = _user!.avatarUrl.isNotEmpty
-                              ? _user!.avatarUrl
-                              : null;
-                          if (effAvatar == null || effAvatar.isEmpty) {
-                            try {
-                              final social = ctx.watch<SocialProvider>();
-                              final myPost = social.posts
-                                  .cast<PostModel?>()
-                                  .firstWhere(
-                                    (p) =>
-                                        p != null &&
-                                        ((_user!.id.isNotEmpty &&
-                                                p.author.id == _user!.id) ||
-                                            (_user!.displayName.isNotEmpty &&
-                                                p.author.displayName
-                                                        .toLowerCase() ==
-                                                    _user!.displayName
-                                                        .toLowerCase()) ||
-                                            (_user!.username.isNotEmpty &&
-                                                p.author.username
-                                                        .toLowerCase() ==
-                                                    _user!.username
-                                                        .toLowerCase())),
-                                    orElse: () => null,
-                                  );
-                              if (myPost != null &&
-                                  myPost.author.avatarUrl.isNotEmpty) {
-                                effAvatar = myPost.author.avatarUrl;
-                              }
-                            } catch (_) {}
-                          }
-
-                          final bool isInActiveRoom =
-                              _user != null &&
-                              _user!.isLive &&
-                              (_user!.liveRoomId != null &&
-                                  _user!.liveRoomId!.isNotEmpty);
-
-                          Widget avatarWidget = UserAvatar(
-                            imageUrl: effAvatar,
-                            name: _user!.displayName,
-                            radius: 38,
-                            showVipFrame: _user!.isVip,
-                            frameAsset:
-                                _user?.avatarFrame != null &&
-                                    _user!.avatarFrame.isNotEmpty &&
-                                    _user!.avatarFrame != 'none'
-                                ? _user!.avatarFrame
-                                : (_user != null && _user!.hasActiveNoble
-                                      ? NobleBadgeHelper.getFrameAsset(
-                                          _user!.nobleTitle,
-                                        )
-                                      : (_user != null && _user!.svipLevel > 0
-                                            ? NobleBadgeHelper.getFrameAsset(
-                                                'SVIP ${_user!.svipLevel}',
-                                              )
-                                            : null)),
-                          );
-
-                          // Active room glowing ring on DP
-                          if (isInActiveRoom) {
-                            avatarWidget = Container(
-                              padding: const EdgeInsets.all(2.5),
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                gradient: const SweepGradient(
-                                  colors: [
-                                    Color(0xFFFF007F),
-                                    Color(0xFF7B1FA2),
-                                    Color(0xFF00E5FF),
-                                    Color(0xFFFF007F),
-                                  ],
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: const Color(
-                                      0xFFE91E63,
-                                    ).withValues(alpha: 0.6),
-                                    blurRadius: 10,
-                                    spreadRadius: 2,
-                                  ),
-                                ],
+                      // Top Row: Avatar on left, Stats on right
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          // Main Avatar Stack with CP Partner Decoration
+                          Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              GestureDetector(
+                                onTap: () {
+                                  if (effAvatar != null && effAvatar.isNotEmpty) {
+                                    FullScreenImageViewer.show(
+                                      context,
+                                      imageUrl: effAvatar,
+                                      tag: 'user_details_avatar_${_user!.id}',
+                                    );
+                                  }
+                                },
+                                child: avatarWidget,
                               ),
-                              child: avatarWidget,
-                            );
-                          }
+                              if (hasCpPartner)
+                                Positioned(
+                                  bottom: -2,
+                                  right: -2,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(2),
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: Colors.pinkAccent,
+                                      border: Border.all(color: Colors.white, width: 1.5),
+                                      boxShadow: const [
+                                        BoxShadow(color: Colors.pinkAccent, blurRadius: 6),
+                                      ],
+                                    ),
+                                    child: const UserAvatar(
+                                      imageUrl:
+                                          'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
+                                      radius: 13,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
 
-                          return GestureDetector(
-                            onTap: () {
-                              if (effAvatar != null && effAvatar.isNotEmpty) {
-                                FullScreenImageViewer.show(
-                                  context,
-                                  imageUrl: effAvatar,
-                                  tag: 'user_details_avatar_${_user!.id}',
-                                );
-                              }
-                            },
-                            child: avatarWidget,
-                          );
-                        },
+                          const Spacer(),
+
+                          // Stats: Profile Visitors, Following, Followers, Likes
+                          Row(
+                            children: [
+                              // Profile Visitors (Footprints) Button (Owner only)
+                              if (isMyProfile) ...[
+                                IconButton(
+                                  icon: Container(
+                                    padding: const EdgeInsets.all(6),
+                                    decoration: BoxDecoration(
+                                      color: cardData.isLight
+                                          ? Colors.purple.withValues(alpha: 0.12)
+                                          : Colors.purple.withValues(alpha: 0.25),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.directions_walk_rounded,
+                                      size: 16,
+                                      color: Colors.purpleAccent,
+                                    ),
+                                  ),
+                                  tooltip: 'Profile Visitors',
+                                  onPressed: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => VisitorsScreen(
+                                          targetUserId: _user?.effectivePublicId ?? widget.userId,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                                const SizedBox(width: 4),
+                              ],
+
+                              // Following
+                              GestureDetector(
+                                onTap: () {
+                                  UserListSheet.show(
+                                    context,
+                                    'Following',
+                                    userId: _user?.effectivePublicId ?? widget.userId,
+                                  );
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        formatCount(followingCount),
+                                        style: TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w900,
+                                          color: cardData.primaryTextColor,
+                                        ),
+                                      ),
+                                      Text(
+                                        'Following',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: cardData.secondaryTextColor,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+
+                              const SizedBox(width: 4),
+
+                              // Followers
+                              GestureDetector(
+                                onTap: () {
+                                  UserListSheet.show(
+                                    context,
+                                    'Followers',
+                                    userId: _user?.effectivePublicId ?? widget.userId,
+                                  );
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        formatCount(displayFollowers),
+                                        style: TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w900,
+                                          color: cardData.primaryTextColor,
+                                        ),
+                                      ),
+                                      Text(
+                                        'Followers',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: cardData.secondaryTextColor,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+
+                              const SizedBox(width: 4),
+
+                              // Likes Tap (Interactive popup dialog)
+                              GestureDetector(
+                                onTap: () {
+                                  showDialog(
+                                    context: context,
+                                    builder: (ctx) => AlertDialog(
+                                      backgroundColor: AppColors.getCard(isDark),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      title: Row(
+                                        children: [
+                                          const Icon(
+                                            Icons.favorite_rounded,
+                                            color: Colors.pinkAccent,
+                                            size: 24,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            'Total Likes',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              color: AppColors.getTextPrimary(isDark),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      content: Text(
+                                        isMyProfile
+                                            ? 'You have total $calculatedLikes likes across all your videos and posts.'
+                                            : '${_user?.name ?? 'User'} has total $calculatedLikes likes across all videos and posts.',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: AppColors.getTextSecondary(isDark),
+                                        ),
+                                      ),
+                                      actions: [
+                                        ElevatedButton(
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: AppColors.getPrimary(isDark),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius: BorderRadius.circular(12),
+                                            ),
+                                          ),
+                                          onPressed: () => Navigator.pop(ctx),
+                                          child: const Text(
+                                            'OK',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        formatCount(calculatedLikes),
+                                        style: TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w900,
+                                          color: cardData.primaryTextColor,
+                                        ),
+                                      ),
+                                      Text(
+                                        'Likes',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: cardData.secondaryTextColor,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
 
-                      // CP Partner Mini-Avatar Decoration (Reference Image 15 & Diagram B)
-                      if (hasCpPartner)
-                        Positioned(
-                          bottom: -2,
-                          right: -2,
-                          child: Container(
-                            padding: const EdgeInsets.all(2),
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Colors.pinkAccent,
-                              border: Border.all(
-                                color: Colors.white,
-                                width: 1.5,
+                      const SizedBox(height: 12),
+
+                      // User Identity Row: Name | Gender/Age Pill | LIVE Badge
+                      Row(
+                        children: [
+                          Flexible(
+                            child: NobleBadgeHelper.buildStyledUsername(
+                              text: _user!.name.isNotEmpty
+                                  ? _user!.name
+                                  : (_user!.displayName.isNotEmpty
+                                        ? _user!.displayName
+                                        : 'User ${_user!.id}'),
+                              nobleTitle: _user!.nobleTitle,
+                              style: TextStyle(
+                                fontSize: 21,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0.2,
+                                color: cardData.primaryTextColor,
                               ),
-                              boxShadow: const [
-                                BoxShadow(
-                                  color: Colors.pinkAccent,
-                                  blurRadius: 6,
+                              isDark: !cardData.isLight,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+
+                          // Gender & Age Pill
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _user!.gender.toLowerCase() == 'female'
+                                  ? const Color(0xFFE91E63)
+                                  : const Color(0xFF3897F0),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  _user!.gender.toLowerCase() == 'female'
+                                      ? Icons.female_rounded
+                                      : Icons.male_rounded,
+                                  size: 12,
+                                  color: Colors.white,
+                                ),
+                                const SizedBox(width: 3),
+                                Text(
+                                  _user!.age > 0 ? '${_user!.age}' : _user!.gender,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ],
                             ),
-                            child: const UserAvatar(
-                              imageUrl:
-                                  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
-                              radius: 13,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                  // Stat Items & Footprints Button inside scrollable Row to prevent overflow
-                  Expanded(
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      physics: const BouncingScrollPhysics(),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          // Footprints / Visitors Button - ONLY FOR PROFILE OWNER (Issue 57)
-                          if (isMyProfile) ...[
-                            IconButton(
-                              icon: Container(
-                                padding: const EdgeInsets.all(6),
-                                decoration: BoxDecoration(
-                                  color: Colors.purple.withValues(alpha: 0.15),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(
-                                  Icons.directions_walk_rounded,
-                                  size: 16,
-                                  color: Colors.purpleAccent,
-                                ),
-                              ),
-                              tooltip: 'Profile Visitors',
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => VisitorsScreen(targetUserId: _user?.effectivePublicId ?? widget.userId),
-                                  ),
-                                );
-                              },
-                            ),
-                            const SizedBox(width: 2),
-                          ],
-                          // Followers Tap
-                          GestureDetector(
-                            onTap: () {
-                              UserListSheet.show(
-                                context,
-                                'Followers',
-                                userId: _user?.effectivePublicId ?? widget.userId,
-                              );
-                            },
-                            child: Padding(
-                              padding: const EdgeInsets.only(bottom: 6),
-                              child: Row(
-                                children: [
-                                  Text(
-                                    '${AppFormatters.formatNumber(displayFollowers)} ',
-                                    style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w900,
-                                      color: primaryText,
-                                    ),
-                                  ),
-                                  Text(
-                                    'Followers',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: secondaryText,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          // Following Tap
-                          GestureDetector(
-                            onTap: () {
-                              UserListSheet.show(
-                                context,
-                                'Following',
-                                userId: _user?.effectivePublicId ?? widget.userId,
-                              );
-                            },
-                            child: Padding(
-                              padding: const EdgeInsets.only(bottom: 6),
-                              child: Row(
-                                children: [
-                                  Text(
-                                    '${AppFormatters.formatNumber(_isMe ? context.read<AuthProvider>().followingUserIds.length : (_user?.following ?? 0))} ',
-                                    style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w900,
-                                      color: primaryText,
-                                    ),
-                                  ),
-                                  Text(
-                                    'Following',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: secondaryText,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          // Likes Tap (TikTok style with interactive popup)
-                          GestureDetector(
-                            onTap: () {
-                              int calculatedLikes = _user?.likesReceived ?? 0;
-                              try {
-                                final social = context.read<SocialProvider>();
-                                final userPosts = social.posts
-                                    .where(
-                                      (p) =>
-                                          (_user != null &&
-                                              _user!.id.isNotEmpty &&
-                                              p.author.id == _user!.id) ||
-                                          (_user != null &&
-                                              _user!.username.isNotEmpty &&
-                                              p.author.username.toLowerCase() ==
-                                                  _user!.username
-                                                      .toLowerCase()),
-                                    )
-                                    .toList();
-                                final pLikes = userPosts.fold(
-                                  0,
-                                  (acc, p) => acc + p.likes,
-                                );
-                                if (pLikes > calculatedLikes)
-                                  calculatedLikes = pLikes;
-                              } catch (_) {}
-
-                              final auth = context.read<AuthProvider>();
-                              final isMe =
-                                  _user != null &&
-                                  (_user!.id == auth.currentUser.id ||
-                                      _user!.username ==
-                                          auth.currentUser.username);
-
-                              showDialog(
-                                context: context,
-                                builder: (ctx) => AlertDialog(
-                                  backgroundColor: AppColors.getCard(isDark),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  title: Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.favorite_rounded,
-                                        color: Colors.pinkAccent,
-                                        size: 24,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        'Total Likes',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          color: AppColors.getTextPrimary(
-                                            isDark,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  content: Text(
-                                    isMe
-                                        ? 'You have total $calculatedLikes likes across all your videos and posts.'
-                                        : '${_user?.name ?? 'User'} has total $calculatedLikes likes across all videos and posts.',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      color: AppColors.getTextSecondary(isDark),
-                                    ),
-                                  ),
-                                  actions: [
-                                    ElevatedButton(
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: AppColors.getPrimary(
-                                          isDark,
-                                        ),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            12,
-                                          ),
-                                        ),
-                                      ),
-                                      onPressed: () => Navigator.pop(ctx),
-                                      child: const Text(
-                                        'OK',
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                            child: Padding(
-                              padding: const EdgeInsets.only(bottom: 6),
-                              child: Row(
-                                children: [
-                                  Text(
-                                    () {
-                                      int count = _user?.likesReceived ?? 0;
-                                      try {
-                                        final social = context
-                                            .read<SocialProvider>();
-                                        final userPosts = social.posts
-                                            .where(
-                                              (p) =>
-                                                  (_user != null &&
-                                                      _user!.id.isNotEmpty &&
-                                                      p.author.id ==
-                                                          _user!.id) ||
-                                                  (_user != null &&
-                                                      _user!
-                                                          .username
-                                                          .isNotEmpty &&
-                                                      p.author.username
-                                                              .toLowerCase() ==
-                                                          _user!.username
-                                                              .toLowerCase()),
-                                            )
-                                            .toList();
-                                        final pLikes = userPosts.fold(
-                                          0,
-                                          (acc, p) => acc + p.likes,
-                                        );
-                                        if (pLikes > count) count = pLikes;
-                                      } catch (_) {}
-                                      if (count >= 1000000)
-                                        return '${(count / 1000000).toStringAsFixed(1)}M ';
-                                      if (count >= 1000)
-                                        return '${(count / 1000).toStringAsFixed(1)}K ';
-                                      return '$count ';
-                                    }(),
-                                    style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w900,
-                                      color: primaryText,
-                                    ),
-                                  ),
-                                  Text(
-                                    'Likes',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: secondaryText,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
                           ),
 
-                          // In Room Action Button in the Circled Area
-                          if (_user != null &&
-                              _user!.isLive &&
-                              (_user!.liveRoomId != null &&
-                                  _user!.liveRoomId!.isNotEmpty)) ...[
-                            const SizedBox(width: 10),
+                          // Live Tag Badge (if live)
+                          if (isInActiveRoom) ...[
+                            const SizedBox(width: 6),
                             GestureDetector(
-                              onTap: () => _openUserActiveRoom(
-                                context,
-                                _user!.liveRoomId,
-                              ),
+                              onTap: () => _openUserActiveRoom(context, _user!.liveRoomId),
                               child: Container(
-                                margin: const EdgeInsets.only(bottom: 2),
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 5,
+                                  horizontal: 8,
+                                  vertical: 3,
                                 ),
                                 decoration: BoxDecoration(
                                   gradient: const LinearGradient(
-                                    colors: [
-                                      Color(0xFFE91E63),
-                                      Color(0xFF9C27B0),
-                                    ],
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
+                                    colors: [Color(0xFFFF1744), Color(0xFFFF5252)],
                                   ),
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(
-                                    color: Colors.white.withValues(alpha: 0.8),
-                                    width: 1.2,
-                                  ),
+                                  borderRadius: BorderRadius.circular(12),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: const Color(
-                                        0xFFE91E63,
-                                      ).withValues(alpha: 0.5),
-                                      blurRadius: 8,
+                                      color: Colors.redAccent.withValues(alpha: 0.5),
+                                      blurRadius: 6,
                                       spreadRadius: 1,
                                     ),
                                   ],
@@ -2043,24 +2060,19 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Icon(
-                                      Icons.graphic_eq_rounded,
+                                      Icons.videocam_rounded,
                                       color: Colors.white,
-                                      size: 13,
+                                      size: 12,
                                     ),
-                                    SizedBox(width: 4),
+                                    SizedBox(width: 3),
                                     Text(
-                                      'In Room',
+                                      'LIVE',
                                       style: TextStyle(
                                         color: Colors.white,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.bold,
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.w900,
+                                        letterSpacing: 0.3,
                                       ),
-                                    ),
-                                    SizedBox(width: 2),
-                                    Icon(
-                                      Icons.arrow_forward_ios_rounded,
-                                      color: Colors.white,
-                                      size: 9,
                                     ),
                                   ],
                                 ),
@@ -2069,188 +2081,91 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                           ],
                         ],
                       ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
 
-        const SizedBox(height: 12),
+                      const SizedBox(height: 6),
 
-        // User Details (Name | Gender/Age Pill | Bounded User ID + Copy | Country | Email)
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Flexible(
-                    child: NobleBadgeHelper.buildStyledUsername(
-                      text: _user!.name.isNotEmpty
-                          ? _user!.name
-                          : (_user!.displayName.isNotEmpty
-                                ? _user!.displayName
-                                : 'User ${_user!.id}'),
-                      nobleTitle: _user!.nobleTitle,
-                      style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 0.2,
+                      // Bounded User ID + Copy Button + Country Flag + Room/Agency Roles
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              'ID: ${_user!.id}',
+                              style: TextStyle(
+                                color: cardData.secondaryTextColor,
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          GestureDetector(
+                            onTap: () {
+                              Clipboard.setData(ClipboardData(text: _user!.id));
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('User ID copied to clipboard!'),
+                                ),
+                              );
+                            },
+                            child: Icon(
+                              Icons.copy_rounded,
+                              color: cardData.iconColor,
+                              size: 14,
+                            ),
+                          ),
+                          if (_user!.countryFlag.isNotEmpty) ...[
+                            const SizedBox(width: 8),
+                            Text(
+                              _user!.countryFlag,
+                              style: const TextStyle(fontSize: 15),
+                            ),
+                          ],
+
+                          const SizedBox(width: 8),
+
+                          // Room / Agency Role Tag
+                          if (_user!.isHost)
+                            _buildRoleTag('Owner / Host', const Color(0xFFFF9800))
+                          else if (_user!.isAgency)
+                            _buildRoleTag('Agency', const Color(0xFF00ACC1))
+                          else if (_user!.isBd)
+                            _buildRoleTag('BD Admin', const Color(0xFF8C38FF)),
+                        ],
                       ),
-                      isDark: isDark,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
 
-                  // Gender & Age Pill (â™‚ 21 / â™€ 22)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 3,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _user!.gender.toLowerCase() == 'female'
-                          ? const Color(0xFFE91E63)
-                          : const Color(0xFF3897F0),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          _user!.gender.toLowerCase() == 'female'
-                              ? Icons.female_rounded
-                              : Icons.male_rounded,
-                          size: 12,
-                          color: Colors.white,
-                        ),
-                        const SizedBox(width: 3),
-                        Text(
-                          _user!.age > 0 ? '${_user!.age}' : _user!.gender,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
+                      const SizedBox(height: 10),
+
+                      // 4 Level Badges Row & Noble Tag
+                      _buildProfileTags(cardData.isLight, svip),
+
+                      // Custom Titles / Banners (up to 3 displayed directly in card)
+                      if (_user!.customTitles.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          physics: const BouncingScrollPhysics(),
+                          child: Row(
+                            children: _user!.customTitles.take(3).map((titleAsset) {
+                              return Padding(
+                                padding: const EdgeInsets.only(right: 6),
+                                child: Image.asset(
+                                  titleAsset,
+                                  height: 28,
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                                ),
+                              );
+                            }).toList(),
                           ),
                         ),
                       ],
-                    ),
+                    ],
                   ),
-
-                  // Live Tag Badge (only shown when user is actually live)
-                  if (_user != null &&
-                      _user!.isLive &&
-                      (_user!.liveRoomId != null &&
-                          _user!.liveRoomId!.isNotEmpty)) ...[
-                    const SizedBox(width: 6),
-                    GestureDetector(
-                      onTap: () =>
-                          _openUserActiveRoom(context, _user!.liveRoomId),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFFFF1744), Color(0xFFFF5252)],
-                          ),
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.redAccent.withValues(alpha: 0.5),
-                              blurRadius: 6,
-                              spreadRadius: 1,
-                            ),
-                          ],
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.videocam_rounded,
-                              color: Colors.white,
-                              size: 12,
-                            ),
-                            SizedBox(width: 3),
-                            Text(
-                              'LIVE',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 0.3,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-
-              const SizedBox(height: 6),
-
-              // Bounded User ID + Copy Button + Country Flag + Room/Agency Roles
-              Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      'ID: ${_user!.id}',
-                      style: TextStyle(
-                        color: secondaryText,
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  GestureDetector(
-                    onTap: () {
-                      Clipboard.setData(ClipboardData(text: _user!.id));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('User ID copied to clipboard!'),
-                        ),
-                      );
-                    },
-                    child: Icon(
-                      Icons.copy_rounded,
-                      color: secondaryText,
-                      size: 14,
-                    ),
-                  ),
-                  if (_user!.countryFlag.isNotEmpty) ...[
-                    const SizedBox(width: 8),
-                    Text(
-                      _user!.countryFlag,
-                      style: const TextStyle(fontSize: 15),
-                    ), // Country Flag
-                  ],
-
-                  const SizedBox(width: 8),
-
-                  // Room / Agency Role Tag
-                  if (_user!.isHost)
-                    _buildRoleTag('Owner / Host', const Color(0xFFFF9800))
-                  else if (_user!.isAgency)
-                    _buildRoleTag('Agency', const Color(0xFF00ACC1))
-                  else if (_user!.isBd)
-                    _buildRoleTag('BD Admin', const Color(0xFF8C38FF)),
-                ],
-              ),
-
-              const SizedBox(height: 12),
-              _buildProfileTags(isDark, svip),
-            ],
+                ),
+              ],
+            ),
           ),
         ),
       ],

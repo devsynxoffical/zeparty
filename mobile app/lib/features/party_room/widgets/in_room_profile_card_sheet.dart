@@ -11,6 +11,7 @@ import '../../../providers/live_party_provider.dart';
 
 import '../../../widgets/user_avatar.dart';
 import '../../../core/utils/noble_badge_helper.dart';
+import '../../../core/utils/profile_card_helper.dart';
 import '../../messages/chat_screen.dart';
 import '../../../widgets/gift_dialog.dart';
 import '../../profile/user_profile_details_screen.dart';
@@ -232,92 +233,59 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
     final giftWallCount = user.likesReceived > 0 ? user.likesReceived.clamp(0, 23) : 0;
     final outfitCount = user.customTitles.length;
 
-    // Resolve Profile Card (Authoritative equipped custom card)
+    // Resolve Profile Card via Master Helper (Clean replacement of default card)
     final backpack = context.watch<BackpackProvider>();
-    String? cardAssetPath;
-    String? cardNetworkUrl;
-
-    // Issue B: One authoritative equipped state.
-    // If user has equipped a card in backpack or database, use it. Otherwise null.
-    final equippedCard = isMe
-        ? (backpack.equippedCardUrl ?? user.profileCardUrl)
-        : user.profileCardUrl;
-
-    if (equippedCard != null && equippedCard.isNotEmpty && equippedCard != 'none') {
-      if (equippedCard.startsWith('http://') || equippedCard.startsWith('https://')) {
-        cardNetworkUrl = equippedCard;
-      } else {
-        cardAssetPath = equippedCard;
-      }
-    }
-
-    final hasCard = cardAssetPath != null || cardNetworkUrl != null;
+    final cardData = ProfileCardHelper.resolve(
+      user: user,
+      isMe: isMe,
+      backpack: backpack,
+    );
+    final hasCard = cardData.hasCustomCard;
 
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF141024),
-        borderRadius: hasCard ? BorderRadius.zero : const BorderRadius.vertical(top: Radius.circular(28)),
-        boxShadow: hasCard
-            ? null
-            : const [
-                BoxShadow(color: Colors.black87, blurRadius: 30, spreadRadius: 5),
-              ],
-        border: hasCard
-            ? null
-            : Border.all(
+        color: cardData.isDefault
+            ? const Color(0xFF141024)
+            : (cardData.isLight ? const Color(0xFFFAF8F5) : const Color(0xFF141024)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        boxShadow: const [
+          BoxShadow(color: Colors.black87, blurRadius: 30, spreadRadius: 5),
+        ],
+        border: cardData.isDefault
+            ? Border.all(
                 color: Colors.amberAccent.withValues(alpha: 0.3),
                 width: 1,
-              ),
+              )
+            : null, // REMOVED default orange/golden border when alternative card equipped!
       ),
       child: ClipRRect(
-        borderRadius: hasCard ? BorderRadius.zero : const BorderRadius.vertical(top: Radius.circular(28)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         child: Stack(
           children: [
-            // BOTTOM LAYER: SVIP Profile Card / Noble Background
-            // Issue A: Responsive layout with BoxFit.fitWidth preserving aspect ratio without clipping
-            if (hasCard) ...[
+            // EQUIPPED CARD BACKGROUND (Clean replacement, no muddy dark gradients)
+            if (hasCard)
               Positioned(
                 top: 0,
                 left: 0,
                 right: 0,
-                child: cardNetworkUrl != null
+                child: cardData.networkUrl != null
                     ? Image.network(
-                        cardNetworkUrl,
+                        cardData.networkUrl!,
                         fit: BoxFit.fitWidth,
                         alignment: Alignment.topCenter,
                         errorBuilder: (_, _, _) => Container(
-                          color: const Color(0xFF141024),
+                          color: cardData.isLight ? const Color(0xFFFAF8F5) : const Color(0xFF141024),
                         ),
                       )
                     : Image.asset(
-                        cardAssetPath!,
+                        cardData.assetPath!,
                         fit: BoxFit.fitWidth,
                         alignment: Alignment.topCenter,
                         errorBuilder: (_, _, _) => Container(
-                          color: const Color(0xFF141024),
+                          color: cardData.isLight ? const Color(0xFFFAF8F5) : const Color(0xFF141024),
                         ),
                       ),
               ),
-              // MIDDLE LAYER: Subtle readability overlay to ensure crisp text contrast in lower area
-              Positioned.fill(
-                child: Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.transparent,
-                        Colors.transparent,
-                        const Color(0xFF141024).withValues(alpha: 0.65),
-                        const Color(0xFF141024),
-                      ],
-                      stops: const [0.0, 0.35, 0.65, 1.0],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-
             // TOP LAYER: Room Mini Profile Content
             SafeArea(
               top: false,
@@ -337,7 +305,7 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       IconButton(
-                        icon: const Icon(Icons.more_horiz_rounded, color: Colors.white70, size: 22),
+                        icon: Icon(Icons.more_horiz_rounded, color: cardData.iconColor, size: 22),
                         tooltip: 'More Options',
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
@@ -347,7 +315,7 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                         width: 40,
                         height: 4,
                         decoration: BoxDecoration(
-                          color: Colors.grey.withValues(alpha: 0.4),
+                          color: cardData.isLight ? Colors.black26 : Colors.grey.withValues(alpha: 0.4),
                           borderRadius: BorderRadius.circular(2),
                         ),
                       ),
