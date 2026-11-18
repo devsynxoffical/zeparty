@@ -19,14 +19,32 @@ class BackpackRepository {
   /// Equip an owned asset by ID
   Future<UserAssetModel> equipAsset(String userAssetId) async {
     final response = await _apiClient.post('/v1/users/me/assets/$userAssetId/equip');
-    final data = response.data?['data'] as Map<String, dynamic>;
-    return UserAssetModel.fromJson(data);
+    if (response.data is Map<String, dynamic>) {
+      final map = response.data as Map<String, dynamic>;
+      if (map['success'] == false) {
+        throw Exception(map['message'] ?? 'Failed to equip asset');
+      }
+      final data = map['data'];
+      if (data is Map<String, dynamic>) {
+        return UserAssetModel.fromJson(data);
+      }
+    }
+    return UserAssetModel.fromJson({});
   }
 
   /// Unequip an owned asset by ID
   Future<UserAssetModel> unequipAsset(String userAssetId) async {
     final response = await _apiClient.post('/v1/users/me/assets/$userAssetId/unequip');
-    final data = response.data?['data'] as Map<String, dynamic>;
-    return UserAssetModel.fromJson(data);
+    if (response.data is Map<String, dynamic>) {
+      final map = response.data as Map<String, dynamic>;
+      if (map['success'] == false) {
+        throw Exception(map['message'] ?? 'Failed to unequip asset');
+      }
+      final data = map['data'];
+      if (data is Map<String, dynamic>) {
+        return UserAssetModel.fromJson(data);
+      }
+    }
+    return UserAssetModel.fromJson({});
   }
 }

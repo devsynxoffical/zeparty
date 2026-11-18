@@ -394,9 +394,16 @@ class BackpackProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await _backpackRepository.equipAsset(userAssetId);
+      final result = await _backpackRepository.equipAsset(userAssetId);
+      if (!result.isEquipped && result.id.isNotEmpty) {
+        throw Exception('Server returned asset not equipped');
+      }
     } catch (e) {
-      debugPrint('[BackpackProvider] Backend equip error (using local equip fallback): $e');
+      debugPrint('[BackpackProvider] Backend equip error: $e');
+      _errorMessage = 'Failed to equip asset. Please try again.';
+      _isLoading = false;
+      notifyListeners();
+      return false;
     }
 
     final index = _userAssets.indexWhere((a) => a.id == userAssetId || a.assetId == userAssetId || (a.asset != null && a.asset!.id == userAssetId));
@@ -444,6 +451,8 @@ class BackpackProvider extends ChangeNotifier {
       } else if (type.contains('CARD') || cat.contains('CARD') || assetName.toLowerCase().contains('card')) {
         onCardChanged?.call(assetImage);
       }
+    } else {
+      await fetchBackpack(refresh: true);
     }
 
     _isLoading = false;
@@ -489,6 +498,8 @@ class BackpackProvider extends ChangeNotifier {
       } else if (type.contains('CARD') || cat.contains('CARD') || assetName.contains('card')) {
         onCardChanged?.call('none');
       }
+    } else {
+      await fetchBackpack(refresh: true);
     }
 
     _isLoading = false;

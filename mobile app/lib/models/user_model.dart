@@ -822,11 +822,19 @@ class UserModel {
       'isCountryLocked': isCountryLocked,
       'isPrivate': isPrivate,
       'customTitles': customTitles,
-      'profileCardUrl': profileCardUrl,
-      'profileSkinUrl': profileSkinUrl,
-      'equippedSkinId': equippedSkinId,
-      'equippedProfileCardId': equippedProfileCardId,
     };
+  }
+
+  /// Dedicated local-session serialization that safely preserves client-side equipment sentinels
+  /// ('none', explicit asset IDs, skin/card URLs) across offline cold starts without
+  /// contaminating network/API request bodies.
+  Map<String, dynamic> toSessionJson() {
+    final map = toJson();
+    map['profileCardUrl'] = profileCardUrl;
+    map['profileSkinUrl'] = profileSkinUrl;
+    map['equippedSkinId'] = equippedSkinId;
+    map['equippedProfileCardId'] = equippedProfileCardId;
+    return map;
   }
 
   UserModel copyWith({

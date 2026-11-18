@@ -225,7 +225,7 @@ class AuthProvider extends ChangeNotifier {
         return;
       }
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_userSessionKey, jsonEncode(user.toJson()));
+      await prefs.setString(_userSessionKey, jsonEncode(user.toSessionJson()));
       SocketService.instance.connect(user: user.toJson());
       BackendRepository.instance.fetchLiveRooms();
     } catch (e) {

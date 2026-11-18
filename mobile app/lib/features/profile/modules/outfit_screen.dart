@@ -18,6 +18,7 @@ class OutfitScreen extends StatefulWidget {
 
 class _OutfitScreenState extends State<OutfitScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  final Set<String> _pendingAssetIds = {};
 
   @override
   void initState() {
@@ -36,44 +37,69 @@ class _OutfitScreenState extends State<OutfitScreen> with SingleTickerProviderSt
   }
 
   void _toggleEquip(UserAssetModel userAsset) async {
+    if (_pendingAssetIds.contains(userAsset.id)) return;
+    setState(() => _pendingAssetIds.add(userAsset.id));
+
     final backpack = context.read<BackpackProvider>();
     final auth = context.read<AuthProvider>();
 
-    if (userAsset.isEquipped) {
-      final success = await backpack.unequipAsset(
-        userAsset.id,
-        onAvatarFrameChanged: (frame) {
-          auth.updateAvatarFrame(frame);
-          try {
-            context.read<LivePartyProvider>().syncUserFrame(auth.currentUser.id, frame);
-          } catch (_) {}
-        },
-        onBadgeChanged: (badge) => auth.updateEquippedBadge(badge),
-        onSkinChanged: (skin) => auth.updateProfileSkin('none'),
-        onCardChanged: (card) => auth.updateProfileCard('none'),
-      );
-      if (success && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Unequipped ${userAsset.asset?.name ?? 'item'}'), duration: const Duration(seconds: 1)),
+    try {
+      if (userAsset.isEquipped) {
+        final success = await backpack.unequipAsset(
+          userAsset.id,
+          onAvatarFrameChanged: (frame) {
+            auth.updateAvatarFrame(frame);
+            try {
+              context.read<LivePartyProvider>().syncUserFrame(auth.currentUser.id, frame);
+            } catch (_) {}
+          },
+          onBadgeChanged: (badge) => auth.updateEquippedBadge(badge),
+          onSkinChanged: (skin) => auth.updateProfileSkin('none'),
+          onCardChanged: (card) => auth.updateProfileCard('none'),
         );
+        if (success && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Unequipped ${userAsset.asset?.name ?? 'item'}'), duration: const Duration(seconds: 1)),
+          );
+        } else if (!success && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(backpack.errorMessage ?? 'Failed to unequip ${userAsset.asset?.name ?? 'item'}'),
+              backgroundColor: Colors.redAccent,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      } else {
+        final success = await backpack.equipAsset(
+          userAsset.id,
+          onAvatarFrameChanged: (frame) {
+            auth.updateAvatarFrame(frame);
+            try {
+              context.read<LivePartyProvider>().syncUserFrame(auth.currentUser.id, frame);
+            } catch (_) {}
+          },
+          onBadgeChanged: (badge) => auth.updateEquippedBadge(badge),
+          onSkinChanged: (skin) => auth.updateProfileSkin(skin),
+          onCardChanged: (card) => auth.updateProfileCard(card),
+        );
+        if (success && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Equipped ${userAsset.asset?.name ?? 'item'}! ✨'), duration: const Duration(seconds: 1)),
+          );
+        } else if (!success && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(backpack.errorMessage ?? 'Failed to equip ${userAsset.asset?.name ?? 'item'}'),
+              backgroundColor: Colors.redAccent,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
       }
-    } else {
-      final success = await backpack.equipAsset(
-        userAsset.id,
-        onAvatarFrameChanged: (frame) {
-          auth.updateAvatarFrame(frame);
-          try {
-            context.read<LivePartyProvider>().syncUserFrame(auth.currentUser.id, frame);
-          } catch (_) {}
-        },
-        onBadgeChanged: (badge) => auth.updateEquippedBadge(badge),
-        onSkinChanged: (skin) => auth.updateProfileSkin(skin),
-        onCardChanged: (card) => auth.updateProfileCard(card),
-      );
-      if (success && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Equipped ${userAsset.asset?.name ?? 'item'}! ✨'), duration: const Duration(seconds: 1)),
-        );
+    } finally {
+      if (mounted) {
+        setState(() => _pendingAssetIds.remove(userAsset.id));
       }
     }
   }
