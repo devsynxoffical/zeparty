@@ -273,9 +273,6 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                         cardData.networkUrl!,
                         fit: BoxFit.fitWidth,
                         alignment: Alignment.topCenter,
-                        // Cards are upscaled to screen width; high-quality resampling avoids the blocky look.
-                        filterQuality: FilterQuality.high,
-                        isAntiAlias: true,
                         errorBuilder: (_, _, _) => Container(
                           color: cardData.isLight ? const Color(0xFFFAF8F5) : const Color(0xFF141024),
                         ),
@@ -284,9 +281,6 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                         cardData.assetPath!,
                         fit: BoxFit.fitWidth,
                         alignment: Alignment.topCenter,
-                        // Cards are upscaled to screen width; high-quality resampling avoids the blocky look.
-                        filterQuality: FilterQuality.high,
-                        isAntiAlias: true,
                         errorBuilder: (_, _, _) => Container(
                           color: cardData.isLight ? const Color(0xFFFAF8F5) : const Color(0xFF141024),
                         ),

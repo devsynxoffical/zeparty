@@ -997,8 +997,6 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                             skinNetworkUrl,
                             fit: BoxFit.fitWidth,
                             alignment: Alignment.topCenter,
-                            filterQuality: FilterQuality.high,
-                            isAntiAlias: true,
                             errorBuilder: (_, _, _) => Container(
                               color: AppColors.getBackground(isDark),
                             ),
@@ -1007,8 +1005,6 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                             skinAssetPath!,
                             fit: BoxFit.fitWidth,
                             alignment: Alignment.topCenter,
-                            filterQuality: FilterQuality.high,
-                            isAntiAlias: true,
                             errorBuilder: (_, _, _) => Container(
                               color: AppColors.getBackground(isDark),
                             ),
@@ -1713,25 +1709,18 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                 if (cardData.hasCustomCard)
                   Positioned.fill(
                     child: cardData.networkUrl != null
-                        // `cover` keeps the artwork's aspect ratio (`fill` stretched portrait and
-                        // landscape cards into the box); high-quality resampling avoids the blocky
-                        // look when the card is drawn larger than its source.
                         ? Image.network(
                             cardData.networkUrl!,
-                            fit: BoxFit.cover,
+                            fit: BoxFit.fill,
                             alignment: Alignment.topCenter,
-                            filterQuality: FilterQuality.high,
-                            isAntiAlias: true,
                             errorBuilder: (_, _, _) => Container(
                               color: const Color(0xFF141024),
                             ),
                           )
                         : Image.asset(
                             cardData.assetPath!,
-                            fit: BoxFit.cover,
+                            fit: BoxFit.fill,
                             alignment: Alignment.topCenter,
-                            filterQuality: FilterQuality.high,
-                            isAntiAlias: true,
                             errorBuilder: (_, _, _) => Container(
                               color: const Color(0xFF141024),
                             ),
