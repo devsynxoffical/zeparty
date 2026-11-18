@@ -1102,15 +1102,15 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                         // 1. Cover Photo at the top
                         _buildCoverPhoto(context, isInActiveRoom),
 
-                        // 2. ONE UNIFIED PROFILE CARD CONTAINER (Replacing old black container)
-                        // Contains all profile information: Identity, Medals, Badges, Relationship, Tabs
-                        _buildUnifiedProfileCard(
+                        // 2. PROFILE CARD CONTAINER
+                        // The equipped custom card frame replaces the default curved container and acts as the container itself.
+                        // Inside it: Avatar, Name, ID, Gender/Age, Stats, Level Badges, Titles.
+                        _buildProfileCard(
                           context,
                           isDark,
                           svip,
                           cardData,
                           isMyProfile,
-                          isUserBlocked,
                           followingCount,
                           displayFollowers,
                           calculatedLikes,
@@ -1118,6 +1118,32 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                           hasCpPartner,
                           isInActiveRoom,
                         ),
+
+                        const SizedBox(height: 16),
+
+                        // 3. Block banner (if user blocked)
+                        if (isUserBlocked) ...[
+                          _buildBlockBanner(context, isDark),
+                          const SizedBox(height: 16),
+                        ],
+
+                        // 4. Medal Gallery
+                        _buildMedalGallery(isDark, cardData),
+
+                        const SizedBox(height: 20),
+
+                        // 5. Badge & Role Gallery
+                        _buildBadgeGallery(isDark, svip, cardData),
+
+                        const SizedBox(height: 20),
+
+                        // 6. Relationship & Honor
+                        _buildRelationshipAndHonor(isDark, cardData),
+
+                        const SizedBox(height: 20),
+
+                        // 7. Profile Tabs & Content (Post, Relation, Honor, Glory)
+                        _buildProfileContent(isDark, cardData),
 
                         const SizedBox(
                           height: 100,
@@ -1546,16 +1572,15 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
     );
   }
 
-  // 2. UNIFIED PROFILE CARD CONTAINER
-  // Complete replacement: The equipped profile card is the parent visual container
-  // for ALL profile information (Identity, Medals, Badges, Relationship, Tabs).
-  Widget _buildUnifiedProfileCard(
+  // 2. PROFILE CARD CONTAINER
+  // The equipped custom card frame replaces the default curved container and acts as the container itself.
+  // All profile card info (avatar, stats, username, ID, badges, levels) sits inside it.
+  Widget _buildProfileCard(
     BuildContext context,
     bool isDark,
     SVIPProvider svip,
     ProfileCardData cardData,
     bool isMyProfile,
-    bool isUserBlocked,
     int followingCount,
     int displayFollowers,
     int calculatedLikes,
@@ -1569,17 +1594,19 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
         margin: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
           color: cardData.cardBackgroundColor,
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: cardData.isDefault ? BorderRadius.circular(22) : BorderRadius.zero,
           border: cardData.cardBorder,
-          boxShadow: const [
-            BoxShadow(
-              color: Colors.black45,
-              blurRadius: 16,
-              offset: Offset(0, 6),
-            ),
-          ],
+          boxShadow: cardData.isDefault
+              ? const [
+                  BoxShadow(
+                    color: Colors.black45,
+                    blurRadius: 16,
+                    offset: Offset(0, 6),
+                  ),
+                ]
+              : null,
         ),
-        clipBehavior: Clip.antiAlias,
+        clipBehavior: cardData.isDefault ? Clip.antiAlias : Clip.none,
         child: Stack(
           children: [
             // Equipped Card Graphic Background (Top-aligned, natural aspect ratio, no stretching)
@@ -1617,55 +1644,21 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                       ),
               ),
 
-            // Card Foreground Content: ENTIRE Profile Information hierarchy inside ONE container!
+            // Card Foreground Content: Avatar, Name, Stats, Levels, Badges inside card frame
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 1. Identity section (Avatar, stats, name, ID, badges, titles)
-                  _buildIdentityHeaderContent(
-                    context,
-                    isDark,
-                    svip,
-                    cardData,
-                    isMyProfile,
-                    followingCount,
-                    displayFollowers,
-                    calculatedLikes,
-                    effAvatar,
-                    hasCpPartner,
-                    isInActiveRoom,
-                  ),
-
-                  // 2. Block banner (if user blocked)
-                  if (isUserBlocked) ...[
-                    const SizedBox(height: 12),
-                    _buildBlockBanner(context, isDark),
-                  ],
-
-                  const SizedBox(height: 16),
-
-                  // 3. Medal Gallery
-                  _buildMedalGallery(isDark, cardData),
-
-                  const SizedBox(height: 20),
-
-                  // 4. Badge & Role Gallery
-                  _buildBadgeGallery(isDark, svip, cardData),
-
-                  const SizedBox(height: 20),
-
-                  // 5. Relationship & Honor
-                  _buildRelationshipAndHonor(isDark, cardData),
-
-                  const SizedBox(height: 20),
-
-                  // 6. Profile Tabs & Content (Post, Relation, Honor, Glory)
-                  _buildProfileContent(isDark, cardData),
-
-                  const SizedBox(height: 16),
-                ],
+              child: _buildIdentityHeaderContent(
+                context,
+                isDark,
+                svip,
+                cardData,
+                isMyProfile,
+                followingCount,
+                displayFollowers,
+                calculatedLikes,
+                effAvatar,
+                hasCpPartner,
+                isInActiveRoom,
               ),
             ),
           ],
@@ -1734,423 +1727,401 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
       );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    Widget avatarStack = Stack(
+      clipBehavior: Clip.none,
       children: [
-        // Top Row: Avatar on left, Stats on right
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            // Main Avatar Stack with CP Partner Decoration
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                GestureDetector(
-                  onTap: () {
-                    if (effAvatar != null && effAvatar.isNotEmpty) {
-                      FullScreenImageViewer.show(
-                        context,
-                        imageUrl: effAvatar,
-                        tag: 'user_details_avatar_${_user!.id}',
-                      );
-                    }
-                  },
-                  child: avatarWidget,
-                ),
-                if (hasCpPartner)
-                  Positioned(
-                    bottom: -2,
-                    right: -2,
-                    child: Container(
-                      padding: const EdgeInsets.all(2),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.pinkAccent,
-                        border: Border.all(color: Colors.white, width: 1.5),
-                        boxShadow: const [
-                          BoxShadow(color: Colors.pinkAccent, blurRadius: 6),
-                        ],
-                      ),
-                      child: const UserAvatar(
-                        imageUrl:
-                            'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
-                        radius: 13,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-
-            const Spacer(),
-
-            // Stats: Profile Visitors, Following, Followers, Likes
-            Row(
-              children: [
-                // Profile Visitors (Footprints) Button (Owner only)
-                if (isMyProfile) ...[
-                  IconButton(
-                    icon: Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        color: cardData.isLight
-                            ? Colors.purple.withValues(alpha: 0.12)
-                            : Colors.purple.withValues(alpha: 0.25),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.directions_walk_rounded,
-                        size: 16,
-                        color: Colors.purpleAccent,
-                      ),
-                    ),
-                    tooltip: 'Profile Visitors',
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => VisitorsScreen(
-                            targetUserId: _user?.effectivePublicId ?? widget.userId,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(width: 4),
-                ],
-
-                // Following
-                GestureDetector(
-                  onTap: () {
-                    UserListSheet.show(
-                      context,
-                      'Following',
-                      userId: _user?.effectivePublicId ?? widget.userId,
-                    );
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          formatCount(followingCount),
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w900,
-                            color: cardData.primaryTextColor,
-                          ),
-                        ),
-                        Text(
-                          'Following',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: cardData.secondaryTextColor,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-                const SizedBox(width: 4),
-
-                // Followers
-                GestureDetector(
-                  onTap: () {
-                    UserListSheet.show(
-                      context,
-                      'Followers',
-                      userId: _user?.effectivePublicId ?? widget.userId,
-                    );
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          formatCount(displayFollowers),
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w900,
-                            color: cardData.primaryTextColor,
-                          ),
-                        ),
-                        Text(
-                          'Followers',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: cardData.secondaryTextColor,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-                const SizedBox(width: 4),
-
-                // Likes Tap (Interactive popup dialog)
-                GestureDetector(
-                  onTap: () {
-                    showDialog(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        backgroundColor: AppColors.getCard(isDark),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        title: Row(
-                          children: [
-                            const Icon(
-                              Icons.favorite_rounded,
-                              color: Colors.pinkAccent,
-                              size: 24,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Total Likes',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.getTextPrimary(isDark),
-                              ),
-                            ),
-                          ],
-                        ),
-                        content: Text(
-                          isMyProfile
-                              ? 'You have total $calculatedLikes likes across all your videos and posts.'
-                              : '${_user?.name ?? 'User'} has total $calculatedLikes likes across all videos and posts.',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: AppColors.getTextSecondary(isDark),
-                          ),
-                        ),
-                        actions: [
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.getPrimary(isDark),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            onPressed: () => Navigator.pop(ctx),
-                            child: const Text(
-                              'OK',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          formatCount(calculatedLikes),
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w900,
-                            color: cardData.primaryTextColor,
-                          ),
-                        ),
-                        Text(
-                          'Likes',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: cardData.secondaryTextColor,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
+        GestureDetector(
+          onTap: () {
+            if (effAvatar != null && effAvatar.isNotEmpty) {
+              FullScreenImageViewer.show(
+                context,
+                imageUrl: effAvatar,
+                tag: 'user_details_avatar_${_user!.id}',
+              );
+            }
+          },
+          child: avatarWidget,
         ),
-
-        const SizedBox(height: 12),
-
-        // User Identity Row: Name | Gender/Age Pill | LIVE Badge
-        Row(
-          children: [
-            Flexible(
-              child: NobleBadgeHelper.buildStyledUsername(
-                text: _user!.name.isNotEmpty
-                    ? _user!.name
-                    : (_user!.displayName.isNotEmpty
-                          ? _user!.displayName
-                          : 'User ${_user!.id}'),
-                nobleTitle: _user!.nobleTitle,
-                style: TextStyle(
-                  fontSize: 21,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 0.2,
-                  color: cardData.primaryTextColor,
-                ),
-                isDark: !cardData.isLight,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+        if (hasCpPartner)
+          Positioned(
+            bottom: -2,
+            right: -2,
+            child: Container(
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.pinkAccent,
+                border: Border.all(color: Colors.white, width: 1.5),
+                boxShadow: const [
+                  BoxShadow(color: Colors.pinkAccent, blurRadius: 6),
+                ],
+              ),
+              child: const UserAvatar(
+                imageUrl:
+                    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
+                radius: 13,
               ),
             ),
-            const SizedBox(width: 6),
+          ),
+      ],
+    );
 
-            // Gender & Age Pill
-            Container(
+    Widget statsWidget = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Profile Visitors (Footprints) Button (Owner only)
+        if (isMyProfile) ...[
+          IconButton(
+            icon: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: cardData.isLight
+                    ? Colors.purple.withValues(alpha: 0.12)
+                    : Colors.purple.withValues(alpha: 0.25),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.directions_walk_rounded,
+                size: 16,
+                color: Colors.purpleAccent,
+              ),
+            ),
+            tooltip: 'Profile Visitors',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => VisitorsScreen(
+                    targetUserId: _user?.effectivePublicId ?? widget.userId,
+                  ),
+                ),
+              );
+            },
+          ),
+          const SizedBox(width: 4),
+        ],
+
+        // Following
+        GestureDetector(
+          onTap: () {
+            UserListSheet.show(
+              context,
+              'Following',
+              userId: _user?.effectivePublicId ?? widget.userId,
+            );
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  formatCount(followingCount),
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                    color: cardData.primaryTextColor,
+                  ),
+                ),
+                Text(
+                  'Following',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: cardData.secondaryTextColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(width: 4),
+
+        // Followers
+        GestureDetector(
+          onTap: () {
+            UserListSheet.show(
+              context,
+              'Followers',
+              userId: _user?.effectivePublicId ?? widget.userId,
+            );
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  formatCount(displayFollowers),
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                    color: cardData.primaryTextColor,
+                  ),
+                ),
+                Text(
+                  'Followers',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: cardData.secondaryTextColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(width: 4),
+
+        // Likes Tap (Interactive popup dialog)
+        GestureDetector(
+          onTap: () {
+            showDialog(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                backgroundColor: AppColors.getCard(isDark),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                title: Row(
+                  children: [
+                    const Icon(
+                      Icons.favorite_rounded,
+                      color: Colors.pinkAccent,
+                      size: 24,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Total Likes',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.getTextPrimary(isDark),
+                      ),
+                    ),
+                  ],
+                ),
+                content: Text(
+                  isMyProfile
+                      ? 'You have total $calculatedLikes likes across all your videos and posts.'
+                      : '${_user?.name ?? 'User'} has total $calculatedLikes likes across all videos and posts.',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: AppColors.getTextSecondary(isDark),
+                  ),
+                ),
+                actions: [
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.getPrimary(isDark),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text(
+                      'OK',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  formatCount(calculatedLikes),
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                    color: cardData.primaryTextColor,
+                  ),
+                ),
+                Text(
+                  'Likes',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: cardData.secondaryTextColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+
+    Widget identityRow(MainAxisAlignment alignment) => Row(
+      mainAxisAlignment: alignment,
+      children: [
+        Flexible(
+          child: NobleBadgeHelper.buildStyledUsername(
+            text: _user!.name.isNotEmpty
+                ? _user!.name
+                : (_user!.displayName.isNotEmpty
+                      ? _user!.displayName
+                      : 'User ${_user!.id}'),
+            nobleTitle: _user!.nobleTitle,
+            style: TextStyle(
+              fontSize: 21,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.2,
+              color: cardData.primaryTextColor,
+            ),
+            isDark: !cardData.isLight,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        const SizedBox(width: 6),
+
+        // Gender & Age Pill
+        Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 8,
+            vertical: 3,
+          ),
+          decoration: BoxDecoration(
+            color: _user!.gender.toLowerCase() == 'female'
+                ? const Color(0xFFE91E63)
+                : const Color(0xFF3897F0),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                _user!.gender.toLowerCase() == 'female'
+                    ? Icons.female_rounded
+                    : Icons.male_rounded,
+                size: 12,
+                color: Colors.white,
+              ),
+              const SizedBox(width: 3),
+              Text(
+                _user!.age > 0 ? '${_user!.age}' : _user!.gender,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Live Tag Badge (if live)
+        if (isInActiveRoom) ...[
+          const SizedBox(width: 6),
+          GestureDetector(
+            onTap: () => _openUserActiveRoom(context, _user!.liveRoomId),
+            child: Container(
               padding: const EdgeInsets.symmetric(
                 horizontal: 8,
                 vertical: 3,
               ),
               decoration: BoxDecoration(
-                color: _user!.gender.toLowerCase() == 'female'
-                    ? const Color(0xFFE91E63)
-                    : const Color(0xFF3897F0),
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFFF1744), Color(0xFFFF5252)],
+                ),
                 borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.redAccent.withValues(alpha: 0.5),
+                    blurRadius: 6,
+                    spreadRadius: 1,
+                  ),
+                ],
               ),
-              child: Row(
+              child: const Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    _user!.gender.toLowerCase() == 'female'
-                        ? Icons.female_rounded
-                        : Icons.male_rounded,
-                    size: 12,
+                    Icons.videocam_rounded,
                     color: Colors.white,
+                    size: 12,
                   ),
-                  const SizedBox(width: 3),
+                  SizedBox(width: 3),
                   Text(
-                    _user!.age > 0 ? '${_user!.age}' : _user!.gender,
-                    style: const TextStyle(
+                    'LIVE',
+                    style: TextStyle(
                       color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.3,
                     ),
                   ),
                 ],
               ),
             ),
+          ),
+        ],
+      ],
+    );
 
-            // Live Tag Badge (if live)
-            if (isInActiveRoom) ...[
-              const SizedBox(width: 6),
-              GestureDetector(
-                onTap: () => _openUserActiveRoom(context, _user!.liveRoomId),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFFFF1744), Color(0xFFFF5252)],
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.redAccent.withValues(alpha: 0.5),
-                        blurRadius: 6,
-                        spreadRadius: 1,
-                      ),
-                    ],
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.videocam_rounded,
-                        color: Colors.white,
-                        size: 12,
-                      ),
-                      SizedBox(width: 3),
-                      Text(
-                        'LIVE',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.3,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-
-        const SizedBox(height: 6),
-
-        // Bounded User ID + Copy Button + Country Flag + Room/Agency Roles
-        Row(
-          children: [
-            Flexible(
-              child: Text(
-                'ID: ${_user!.id}',
-                style: TextStyle(
-                  color: cardData.secondaryTextColor,
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
+    Widget idRow(MainAxisAlignment alignment) => Row(
+      mainAxisAlignment: alignment,
+      children: [
+        Flexible(
+          child: Text(
+            'ID: ${_user!.id}',
+            style: TextStyle(
+              color: cardData.secondaryTextColor,
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
             ),
-            const SizedBox(width: 4),
-            GestureDetector(
-              onTap: () {
-                Clipboard.setData(ClipboardData(text: _user!.id));
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('User ID copied to clipboard!'),
-                  ),
-                );
-              },
-              child: Icon(
-                Icons.copy_rounded,
-                color: cardData.iconColor,
-                size: 14,
-              ),
-            ),
-            if (_user!.countryFlag.isNotEmpty) ...[
-              const SizedBox(width: 8),
-              Text(
-                _user!.countryFlag,
-                style: const TextStyle(fontSize: 15),
-              ),
-            ],
-
-            const SizedBox(width: 8),
-
-            // Room / Agency Role Tag
-            if (_user!.isHost)
-              _buildRoleTag('Owner / Host', const Color(0xFFFF9800))
-            else if (_user!.isAgency)
-              _buildRoleTag('Agency', const Color(0xFF00ACC1))
-            else if (_user!.isBd)
-              _buildRoleTag('BD Admin', const Color(0xFF8C38FF)),
-          ],
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
+        const SizedBox(width: 4),
+        GestureDetector(
+          onTap: () {
+            Clipboard.setData(ClipboardData(text: _user!.id));
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('User ID copied to clipboard!'),
+              ),
+            );
+          },
+          child: Icon(
+            Icons.copy_rounded,
+            color: cardData.iconColor,
+            size: 14,
+          ),
+        ),
+        if (_user!.countryFlag.isNotEmpty) ...[
+          const SizedBox(width: 8),
+          Text(
+            _user!.countryFlag,
+            style: const TextStyle(fontSize: 15),
+          ),
+        ],
 
-        const SizedBox(height: 10),
+        const SizedBox(width: 8),
 
-        // 4 Level Badges Row & Noble Tag
-        _buildProfileTags(cardData.isLight, svip),
+        // Room / Agency Role Tag
+        if (_user!.isHost)
+          _buildRoleTag('Owner / Host', const Color(0xFFFF9800))
+        else if (_user!.isAgency)
+          _buildRoleTag('Agency', const Color(0xFF00ACC1))
+        else if (_user!.isBd)
+          _buildRoleTag('BD Admin', const Color(0xFF8C38FF)),
+      ],
+    );
 
-        // Custom Titles / Banners (up to 3 displayed directly in card)
-        if (_user!.customTitles.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          SingleChildScrollView(
+    Widget customTitlesWidget = _user!.customTitles.isNotEmpty
+        ? SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             physics: const BouncingScrollPhysics(),
             child: Row(
+              mainAxisAlignment: cardData.hasCustomCard ? MainAxisAlignment.center : MainAxisAlignment.start,
               children: _user!.customTitles.take(3).map((titleAsset) {
                 return Padding(
                   padding: const EdgeInsets.only(right: 6),
@@ -2163,7 +2134,79 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                 );
               }).toList(),
             ),
-          ),
+          )
+        : const SizedBox.shrink();
+
+    // CUSTOM CARD: Centered layout aligning avatar with the crest of the card frame
+    if (cardData.hasCustomCard) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // 1. Centered Avatar inside Card Crest
+          Center(child: avatarStack),
+
+          const SizedBox(height: 8),
+
+          // 2. User Name | Gender/Age | Live Badge (Centered)
+          identityRow(MainAxisAlignment.center),
+
+          const SizedBox(height: 6),
+
+          // 3. User ID | Flag | Role Tag (Centered)
+          idRow(MainAxisAlignment.center),
+
+          const SizedBox(height: 10),
+
+          // 4. Centered Stats: Visitors | Following | Followers | Likes
+          Center(child: statsWidget),
+
+          const SizedBox(height: 10),
+
+          // 5. 4 Level Badges Row & Noble/SVIP Tag
+          _buildProfileTags(cardData.isLight, svip),
+
+          // 6. Custom Titles / Banners if any
+          if (_user!.customTitles.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            customTitlesWidget,
+          ],
+        ],
+      );
+    }
+
+    // DEFAULT CARD: Standard layout (Avatar on left, stats on right)
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Top Row: Avatar on left, Stats on right
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            avatarStack,
+            const Spacer(),
+            statsWidget,
+          ],
+        ),
+
+        const SizedBox(height: 12),
+
+        // User Identity Row: Name | Gender/Age Pill | LIVE Badge
+        identityRow(MainAxisAlignment.start),
+
+        const SizedBox(height: 6),
+
+        // Bounded User ID + Copy Button + Country Flag + Room/Agency Roles
+        idRow(MainAxisAlignment.start),
+
+        const SizedBox(height: 10),
+
+        // 4 Level Badges Row & Noble Tag
+        _buildProfileTags(cardData.isLight, svip),
+
+        // Custom Titles / Banners (up to 3 displayed directly in card)
+        if (_user!.customTitles.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          customTitlesWidget,
         ],
       ],
     );

@@ -246,13 +246,12 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
     final hasCard = cardData.hasCustomCard;
 
     return Container(
-      decoration: BoxDecoration(
-        color: cardData.cardBackgroundColor,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-        boxShadow: const [
+      decoration: const BoxDecoration(
+        color: Color(0xFF141024),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        boxShadow: [
           BoxShadow(color: Colors.black87, blurRadius: 30, spreadRadius: 5),
         ],
-        border: cardData.cardBorder,
       ),
       child: ClipRRect(
         borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),

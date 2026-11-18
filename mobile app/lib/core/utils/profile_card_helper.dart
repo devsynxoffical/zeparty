@@ -31,8 +31,9 @@ class ProfileCardData {
   bool get hasCustomCard => !isDefault && (assetPath != null || networkUrl != null);
 
   /// Visual container background color matching the card theme.
+  /// When a custom card is equipped, it replaces the container itself (transparent background).
   Color get cardBackgroundColor =>
-      isDefault ? const Color(0xFF141024) : (isLight ? const Color(0xFFFAF8F5) : const Color(0xFF141024));
+      isDefault ? const Color(0xFF141024) : Colors.transparent;
 
   /// Visual container border: Default card uses golden/orange border; custom cards are borderless.
   BoxBorder? get cardBorder =>
@@ -109,6 +110,13 @@ class ProfileCardHelper {
     'zp-170': true,
     'zp-170_special-cards_card.webp': true,
     'assets/store/zp-170_special-cards_card.webp': true,
+
+    // SVIP Explicit Cards
+    'svip7': true,
+    'svip7_card.webp': true,
+    'assets/svip/svip7_card.webp': true,
+    'svip7_profilecard.webp': true,
+    'assets/svip/svip7_profilecard.webp': true,
 
     // Known Dark Cards
     'card_vip.jpg': false,
