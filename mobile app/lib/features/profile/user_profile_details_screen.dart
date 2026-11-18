@@ -952,7 +952,64 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
 
     final hasSkin = skinAssetPath != null || skinNetworkUrl != null;
 
+    final backpack = context.watch<BackpackProvider>();
 
+    // Resolve Authoritative Profile Card & Dynamic Theme Adaptation
+    final cardData = _customCardLoadFailed
+        ? ProfileCardData.defaultCard
+        : ProfileCardHelper.resolve(
+            user: _user,
+            isMe: isMyProfile,
+            backpack: backpack,
+          );
+
+    final displayFollowers = _user?.followers ?? 0;
+    final followingCount = isMyProfile
+        ? auth.followingUserIds.length
+        : (_user?.following ?? 0);
+
+    final bool isInActiveRoom = _user != null &&
+        _user!.isLive &&
+        (_user!.liveRoomId != null && _user!.liveRoomId!.isNotEmpty);
+
+    int calculatedLikes = _user?.likesReceived ?? 0;
+    try {
+      final social = context.read<SocialProvider>();
+      final userPosts = social.posts.where(
+        (p) =>
+            (_user != null && _user!.id.isNotEmpty && p.author.id == _user!.id) ||
+            (_user != null &&
+                _user!.username.isNotEmpty &&
+                p.author.username.toLowerCase() == _user!.username.toLowerCase()),
+      ).toList();
+      final pLikes = userPosts.fold(0, (acc, p) => acc + p.likes);
+      if (pLikes > calculatedLikes) calculatedLikes = pLikes;
+    } catch (_) {}
+
+    String? effAvatar = (_user?.avatarUrl != null && _user!.avatarUrl.isNotEmpty) ? _user!.avatarUrl : null;
+    if (effAvatar == null || effAvatar.isEmpty) {
+      try {
+        final social = context.read<SocialProvider>();
+        final myPost = social.posts.cast<PostModel?>().firstWhere(
+          (p) =>
+              p != null &&
+              ((_user!.id.isNotEmpty && p.author.id == _user!.id) ||
+                  (_user!.displayName.isNotEmpty &&
+                      p.author.displayName.toLowerCase() ==
+                          _user!.displayName.toLowerCase()) ||
+                  (_user!.username.isNotEmpty &&
+                      p.author.username.toLowerCase() ==
+                          _user!.username.toLowerCase())),
+          orElse: () => null,
+        );
+        if (myPost != null && myPost.author.avatarUrl.isNotEmpty) {
+          effAvatar = myPost.author.avatarUrl;
+        }
+      } catch (_) {}
+    }
+
+    final hasCpPartner =
+        _user?.cpPartnerId != null && _user!.cpPartnerId!.isNotEmpty;
 
     return Scaffold(
       backgroundColor: AppColors.getBackground(isDark),
@@ -1042,84 +1099,25 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // 1. TOP BAR & COVER + IDENTITY
-                        _buildCoverAndIdentityHeader(
+                        // 1. Cover Photo at the top
+                        _buildCoverPhoto(context, isInActiveRoom),
+
+                        // 2. ONE UNIFIED PROFILE CARD CONTAINER (Replacing old black container)
+                        // Contains all profile information: Identity, Medals, Badges, Relationship, Tabs
+                        _buildUnifiedProfileCard(
                           context,
                           isDark,
                           svip,
-                          isFollowing,
-                          hasSkin: hasSkin,
+                          cardData,
+                          isMyProfile,
+                          isUserBlocked,
+                          followingCount,
+                          displayFollowers,
+                          calculatedLikes,
+                          effAvatar,
+                          hasCpPartner,
+                          isInActiveRoom,
                         ),
-
-                        const SizedBox(height: 16),
-
-                        // If User is Blocked, show Block Banner
-                        if (isUserBlocked)
-                          Container(
-                            margin: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 8,
-                            ),
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: Colors.redAccent.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: Colors.redAccent.withValues(alpha: 0.5),
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(
-                                  Icons.block_rounded,
-                                  color: Colors.redAccent,
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Text(
-                                    'You have blocked this user. Unblock to view interactions.',
-                                    style: TextStyle(
-                                      color: primaryText,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                                TextButton(
-                                  onPressed: () {
-                                    auth.unblockUser(_user!.id).then((_) {
-                                      if (mounted) setState(() {});
-                                    });
-                                  },
-                                  child: const Text(
-                                    'Unblock',
-                                    style: TextStyle(
-                                      color: Colors.redAccent,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-
-                        // 2. MEDAL GALLERY (Featured Medals max 5 | Total Count)
-                        _buildMedalGallery(isDark),
-
-                        const SizedBox(height: 20),
-
-                        // 3. BADGE GALLERY
-                        _buildBadgeGallery(isDark, svip),
-
-                        const SizedBox(height: 20),
-
-                        // 4. RELATIONSHIP + HONOR
-                        _buildRelationshipAndHonor(isDark),
-
-                        const SizedBox(height: 20),
-
-                        // 5. PROFILE TABS & CONTENT
-                        _buildProfileContent(isDark),
 
                         const SizedBox(
                           height: 100,
@@ -1448,42 +1446,11 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
     );
   }
 
-  // 1 & 2. DIAGRAM B: COVER + IDENTITY & TOP BAR
-  Widget _buildCoverAndIdentityHeader(
+  // 1. COVER PHOTO
+  Widget _buildCoverPhoto(
     BuildContext context,
-    bool isDark,
-    SVIPProvider svip,
-    bool isFollowing, {
-    bool hasSkin = false,
-  }) {
-    final auth = context.read<AuthProvider>();
-    final backpack = context.watch<BackpackProvider>();
-    final currentUserId = auth.currentUser.id;
-    final currentUsername = auth.currentUser.username.toLowerCase();
-    final currentName = auth.currentUser.name.toLowerCase();
-    final targetId = _user?.id ?? widget.userId;
-    final targetUsername = _user?.username.toLowerCase() ?? '';
-    final targetName = _user?.name.toLowerCase() ?? '';
-    final isMyProfile =
-        (targetId.isNotEmpty &&
-            (targetId == currentUserId || targetId == 'me')) ||
-        (targetUsername.isNotEmpty &&
-            currentUsername.isNotEmpty &&
-            targetUsername == currentUsername) ||
-        (targetName.isNotEmpty &&
-            currentName.isNotEmpty &&
-            targetName == currentName) ||
-        (widget.userId.isNotEmpty &&
-            (widget.userId == currentUserId ||
-                widget.userId == 'me' ||
-                (currentUsername.isNotEmpty &&
-                    widget.userId.toLowerCase() == currentUsername)));
-
-    final displayFollowers = _user!.followers;
-    final followingCount = isMyProfile
-        ? context.read<AuthProvider>().followingUserIds.length
-        : (_user?.following ?? 0);
-
+    bool isInActiveRoom,
+  ) {
     final coverUrl = _user!.effectiveCoverUrl;
     bool isLocalFile = false;
     if (coverUrl.startsWith('/') ||
@@ -1505,65 +1472,226 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                   'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80',
                 ));
 
-    final hasCpPartner =
-        _user!.cpPartnerId != null && _user!.cpPartnerId!.isNotEmpty;
+    return Stack(
+      children: [
+        Container(
+          height: 200,
+          width: double.infinity,
+          decoration: BoxDecoration(
+            image: DecorationImage(
+              image: coverImageProvider,
+              fit: BoxFit.cover,
+            ),
+          ),
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.black.withValues(alpha: 0.35),
+                  Colors.transparent,
+                  Colors.black.withValues(alpha: 0.25),
+                ],
+                stops: const [0.0, 0.5, 1.0],
+              ),
+            ),
+          ),
+        ),
 
-    // Resolve Authoritative Profile Card & Dynamic Theme Adaptation
-    final cardData = _customCardLoadFailed
-        ? ProfileCardData.defaultCard
-        : ProfileCardHelper.resolve(
-            user: _user,
-            isMe: isMyProfile,
-            backpack: backpack,
-          );
+        // In-Room Status Button on bottom right of cover photo
+        if (isInActiveRoom)
+          Positioned(
+            bottom: 34,
+            right: 16,
+            child: GestureDetector(
+              onTap: () => _openUserActiveRoom(context, _user!.liveRoomId),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFE91E63), Color(0xFF9C27B0)],
+                  ),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 1.2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFFE91E63).withValues(alpha: 0.5),
+                      blurRadius: 8,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.graphic_eq_rounded, color: Colors.white, size: 13),
+                    SizedBox(width: 4),
+                    Text(
+                      'In Room',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    SizedBox(width: 2),
+                    Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 9),
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
 
-    // Calculate real likes
-    int calculatedLikes = _user?.likesReceived ?? 0;
-    try {
-      final social = context.read<SocialProvider>();
-      final userPosts = social.posts.where(
-        (p) =>
-            (_user != null && _user!.id.isNotEmpty && p.author.id == _user!.id) ||
-            (_user != null &&
-                _user!.username.isNotEmpty &&
-                p.author.username.toLowerCase() == _user!.username.toLowerCase()),
-      ).toList();
-      final pLikes = userPosts.fold(0, (acc, p) => acc + p.likes);
-      if (pLikes > calculatedLikes) calculatedLikes = pLikes;
-    } catch (_) {}
+  // 2. UNIFIED PROFILE CARD CONTAINER
+  // Complete replacement: The equipped profile card is the parent visual container
+  // for ALL profile information (Identity, Medals, Badges, Relationship, Tabs).
+  Widget _buildUnifiedProfileCard(
+    BuildContext context,
+    bool isDark,
+    SVIPProvider svip,
+    ProfileCardData cardData,
+    bool isMyProfile,
+    bool isUserBlocked,
+    int followingCount,
+    int displayFollowers,
+    int calculatedLikes,
+    String? effAvatar,
+    bool hasCpPartner,
+    bool isInActiveRoom,
+  ) {
+    return Transform.translate(
+      offset: const Offset(0, -28),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: cardData.cardBackgroundColor,
+          borderRadius: BorderRadius.circular(22),
+          border: cardData.cardBorder,
+          boxShadow: const [
+            BoxShadow(
+              color: Colors.black45,
+              blurRadius: 16,
+              offset: Offset(0, 6),
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          children: [
+            // Equipped Card Graphic Background (Top-aligned, natural aspect ratio, no stretching)
+            if (cardData.hasCustomCard)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: cardData.networkUrl != null
+                    ? Image.network(
+                        cardData.networkUrl!,
+                        fit: BoxFit.fitWidth,
+                        alignment: Alignment.topCenter,
+                        errorBuilder: (context, error, stackTrace) {
+                          if (!_customCardLoadFailed) {
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (mounted) setState(() => _customCardLoadFailed = true);
+                            });
+                          }
+                          return const SizedBox.shrink();
+                        },
+                      )
+                    : Image.asset(
+                        cardData.assetPath!,
+                        fit: BoxFit.fitWidth,
+                        alignment: Alignment.topCenter,
+                        errorBuilder: (context, error, stackTrace) {
+                          if (!_customCardLoadFailed) {
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (mounted) setState(() => _customCardLoadFailed = true);
+                            });
+                          }
+                          return const SizedBox.shrink();
+                        },
+                      ),
+              ),
 
+            // Card Foreground Content: ENTIRE Profile Information hierarchy inside ONE container!
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 1. Identity section (Avatar, stats, name, ID, badges, titles)
+                  _buildIdentityHeaderContent(
+                    context,
+                    isDark,
+                    svip,
+                    cardData,
+                    isMyProfile,
+                    followingCount,
+                    displayFollowers,
+                    calculatedLikes,
+                    effAvatar,
+                    hasCpPartner,
+                    isInActiveRoom,
+                  ),
+
+                  // 2. Block banner (if user blocked)
+                  if (isUserBlocked) ...[
+                    const SizedBox(height: 12),
+                    _buildBlockBanner(context, isDark),
+                  ],
+
+                  const SizedBox(height: 16),
+
+                  // 3. Medal Gallery
+                  _buildMedalGallery(isDark, cardData),
+
+                  const SizedBox(height: 20),
+
+                  // 4. Badge & Role Gallery
+                  _buildBadgeGallery(isDark, svip, cardData),
+
+                  const SizedBox(height: 20),
+
+                  // 5. Relationship & Honor
+                  _buildRelationshipAndHonor(isDark, cardData),
+
+                  const SizedBox(height: 20),
+
+                  // 6. Profile Tabs & Content (Post, Relation, Honor, Glory)
+                  _buildProfileContent(isDark, cardData),
+
+                  const SizedBox(height: 16),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIdentityHeaderContent(
+    BuildContext context,
+    bool isDark,
+    SVIPProvider svip,
+    ProfileCardData cardData,
+    bool isMyProfile,
+    int followingCount,
+    int displayFollowers,
+    int calculatedLikes,
+    String? effAvatar,
+    bool hasCpPartner,
+    bool isInActiveRoom,
+  ) {
     String formatCount(int count) {
       if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}M';
       if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}K';
       return '$count';
     }
-
-    // Resolve effective Avatar
-    String? effAvatar = _user!.avatarUrl.isNotEmpty ? _user!.avatarUrl : null;
-    if (effAvatar == null || effAvatar.isEmpty) {
-      try {
-        final social = context.read<SocialProvider>();
-        final myPost = social.posts.cast<PostModel?>().firstWhere(
-          (p) =>
-              p != null &&
-              ((_user!.id.isNotEmpty && p.author.id == _user!.id) ||
-                  (_user!.displayName.isNotEmpty &&
-                      p.author.displayName.toLowerCase() ==
-                          _user!.displayName.toLowerCase()) ||
-                  (_user!.username.isNotEmpty &&
-                      p.author.username.toLowerCase() ==
-                          _user!.username.toLowerCase())),
-          orElse: () => null,
-        );
-        if (myPost != null && myPost.author.avatarUrl.isNotEmpty) {
-          effAvatar = myPost.author.avatarUrl;
-        }
-      } catch (_) {}
-    }
-
-    final bool isInActiveRoom = _user != null &&
-        _user!.isLive &&
-        (_user!.liveRoomId != null && _user!.liveRoomId!.isNotEmpty);
 
     Widget avatarWidget = UserAvatar(
       imageUrl: effAvatar,
@@ -1609,582 +1737,483 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 1. Cover Photo
-        Stack(
+        // Top Row: Avatar on left, Stats on right
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Container(
-              height: 200,
-              width: double.infinity,
-              decoration: BoxDecoration(
-                image: DecorationImage(
-                  image: coverImageProvider,
-                  fit: BoxFit.cover,
+            // Main Avatar Stack with CP Partner Decoration
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                GestureDetector(
+                  onTap: () {
+                    if (effAvatar != null && effAvatar.isNotEmpty) {
+                      FullScreenImageViewer.show(
+                        context,
+                        imageUrl: effAvatar,
+                        tag: 'user_details_avatar_${_user!.id}',
+                      );
+                    }
+                  },
+                  child: avatarWidget,
                 ),
-              ),
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.black.withValues(alpha: 0.35),
-                      Colors.transparent,
-                      Colors.black.withValues(alpha: 0.25),
-                    ],
-                    stops: const [0.0, 0.5, 1.0],
+                if (hasCpPartner)
+                  Positioned(
+                    bottom: -2,
+                    right: -2,
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.pinkAccent,
+                        border: Border.all(color: Colors.white, width: 1.5),
+                        boxShadow: const [
+                          BoxShadow(color: Colors.pinkAccent, blurRadius: 6),
+                        ],
+                      ),
+                      child: const UserAvatar(
+                        imageUrl:
+                            'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
+                        radius: 13,
+                      ),
+                    ),
                   ),
-                ),
-              ),
+              ],
             ),
 
-            // In-Room Status Button on bottom right of cover photo
-            if (isInActiveRoom)
-              Positioned(
-                bottom: 34,
-                right: 16,
-                child: GestureDetector(
-                  onTap: () => _openUserActiveRoom(context, _user!.liveRoomId),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFFE91E63), Color(0xFF9C27B0)],
+            const Spacer(),
+
+            // Stats: Profile Visitors, Following, Followers, Likes
+            Row(
+              children: [
+                // Profile Visitors (Footprints) Button (Owner only)
+                if (isMyProfile) ...[
+                  IconButton(
+                    icon: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: cardData.isLight
+                            ? Colors.purple.withValues(alpha: 0.12)
+                            : Colors.purple.withValues(alpha: 0.25),
+                        shape: BoxShape.circle,
                       ),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 1.2),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFFE91E63).withValues(alpha: 0.5),
-                          blurRadius: 8,
-                          spreadRadius: 1,
-                        ),
-                      ],
+                      child: const Icon(
+                        Icons.directions_walk_rounded,
+                        size: 16,
+                        color: Colors.purpleAccent,
+                      ),
                     ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.graphic_eq_rounded, color: Colors.white, size: 13),
-                        SizedBox(width: 4),
-                        Text(
-                          'In Room',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
+                    tooltip: 'Profile Visitors',
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => VisitorsScreen(
+                            targetUserId: _user?.effectivePublicId ?? widget.userId,
                           ),
                         ),
-                        SizedBox(width: 2),
-                        Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 9),
+                      );
+                    },
+                  ),
+                  const SizedBox(width: 4),
+                ],
+
+                // Following
+                GestureDetector(
+                  onTap: () {
+                    UserListSheet.show(
+                      context,
+                      'Following',
+                      userId: _user?.effectivePublicId ?? widget.userId,
+                    );
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          formatCount(followingCount),
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w900,
+                            color: cardData.primaryTextColor,
+                          ),
+                        ),
+                        Text(
+                          'Following',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: cardData.secondaryTextColor,
+                          ),
+                        ),
                       ],
                     ),
                   ),
                 ),
-              ),
+
+                const SizedBox(width: 4),
+
+                // Followers
+                GestureDetector(
+                  onTap: () {
+                    UserListSheet.show(
+                      context,
+                      'Followers',
+                      userId: _user?.effectivePublicId ?? widget.userId,
+                    );
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          formatCount(displayFollowers),
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w900,
+                            color: cardData.primaryTextColor,
+                          ),
+                        ),
+                        Text(
+                          'Followers',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: cardData.secondaryTextColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                const SizedBox(width: 4),
+
+                // Likes Tap (Interactive popup dialog)
+                GestureDetector(
+                  onTap: () {
+                    showDialog(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        backgroundColor: AppColors.getCard(isDark),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        title: Row(
+                          children: [
+                            const Icon(
+                              Icons.favorite_rounded,
+                              color: Colors.pinkAccent,
+                              size: 24,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Total Likes',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.getTextPrimary(isDark),
+                              ),
+                            ),
+                          ],
+                        ),
+                        content: Text(
+                          isMyProfile
+                              ? 'You have total $calculatedLikes likes across all your videos and posts.'
+                              : '${_user?.name ?? 'User'} has total $calculatedLikes likes across all videos and posts.',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: AppColors.getTextSecondary(isDark),
+                          ),
+                        ),
+                        actions: [
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.getPrimary(isDark),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            onPressed: () => Navigator.pop(ctx),
+                            child: const Text(
+                              'OK',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          formatCount(calculatedLikes),
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w900,
+                            color: cardData.primaryTextColor,
+                          ),
+                        ),
+                        Text(
+                          'Likes',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: cardData.secondaryTextColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
 
-        // 2. UNIFIED PROFILE CARD CONTAINER
-        // Complete replacement: If alternative card is equipped, NO default black background and NO orange/golden border!
-        Transform.translate(
-          offset: const Offset(0, -28),
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              color: cardData.isDefault
-                  ? const Color(0xFF141024)
-                  : (cardData.isLight ? const Color(0xFFFAF8F5) : const Color(0xFF141024)),
-              borderRadius: BorderRadius.circular(22),
-              border: cardData.isDefault
-                  ? Border.all(color: const Color(0xFFFFB300), width: 1.5)
-                  : null, // REMOVED default orange/golden border when alternative card equipped!
-              boxShadow: const [
-                BoxShadow(
-                  color: Colors.black45,
-                  blurRadius: 16,
-                  offset: Offset(0, 6),
+        const SizedBox(height: 12),
+
+        // User Identity Row: Name | Gender/Age Pill | LIVE Badge
+        Row(
+          children: [
+            Flexible(
+              child: NobleBadgeHelper.buildStyledUsername(
+                text: _user!.name.isNotEmpty
+                    ? _user!.name
+                    : (_user!.displayName.isNotEmpty
+                          ? _user!.displayName
+                          : 'User ${_user!.id}'),
+                nobleTitle: _user!.nobleTitle,
+                style: TextStyle(
+                  fontSize: 21,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.2,
+                  color: cardData.primaryTextColor,
                 ),
-              ],
+                isDark: !cardData.isLight,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-            clipBehavior: Clip.antiAlias,
-            child: Stack(
-              children: [
-                // Equipped Card Graphic Background (Top-aligned, natural aspect ratio, no stretching)
-                if (cardData.hasCustomCard)
-                  Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    child: cardData.networkUrl != null
-                        ? Image.network(
-                            cardData.networkUrl!,
-                            fit: BoxFit.fitWidth,
-                            alignment: Alignment.topCenter,
-                            errorBuilder: (context, error, stackTrace) {
-                              if (!_customCardLoadFailed) {
-                                WidgetsBinding.instance.addPostFrameCallback((_) {
-                                  if (mounted) setState(() => _customCardLoadFailed = true);
-                                });
-                              }
-                              return const SizedBox.shrink();
-                            },
-                          )
-                        : Image.asset(
-                            cardData.assetPath!,
-                            fit: BoxFit.fitWidth,
-                            alignment: Alignment.topCenter,
-                            errorBuilder: (context, error, stackTrace) {
-                              if (!_customCardLoadFailed) {
-                                WidgetsBinding.instance.addPostFrameCallback((_) {
-                                  if (mounted) setState(() => _customCardLoadFailed = true);
-                                });
-                              }
-                              return const SizedBox.shrink();
-                            },
-                          ),
+            const SizedBox(width: 6),
+
+            // Gender & Age Pill
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 8,
+                vertical: 3,
+              ),
+              decoration: BoxDecoration(
+                color: _user!.gender.toLowerCase() == 'female'
+                    ? const Color(0xFFE91E63)
+                    : const Color(0xFF3897F0),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    _user!.gender.toLowerCase() == 'female'
+                        ? Icons.female_rounded
+                        : Icons.male_rounded,
+                    size: 12,
+                    color: Colors.white,
                   ),
+                  const SizedBox(width: 3),
+                  Text(
+                    _user!.age > 0 ? '${_user!.age}' : _user!.gender,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
 
-                // Card Foreground Content
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+            // Live Tag Badge (if live)
+            if (isInActiveRoom) ...[
+              const SizedBox(width: 6),
+              GestureDetector(
+                onTap: () => _openUserActiveRoom(context, _user!.liveRoomId),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFFF1744), Color(0xFFFF5252)],
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.redAccent.withValues(alpha: 0.5),
+                        blurRadius: 6,
+                        spreadRadius: 1,
+                      ),
+                    ],
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Top Row: Avatar on left, Stats on right
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          // Main Avatar Stack with CP Partner Decoration
-                          Stack(
-                            clipBehavior: Clip.none,
-                            children: [
-                              GestureDetector(
-                                onTap: () {
-                                  if (effAvatar != null && effAvatar.isNotEmpty) {
-                                    FullScreenImageViewer.show(
-                                      context,
-                                      imageUrl: effAvatar,
-                                      tag: 'user_details_avatar_${_user!.id}',
-                                    );
-                                  }
-                                },
-                                child: avatarWidget,
-                              ),
-                              if (hasCpPartner)
-                                Positioned(
-                                  bottom: -2,
-                                  right: -2,
-                                  child: Container(
-                                    padding: const EdgeInsets.all(2),
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: Colors.pinkAccent,
-                                      border: Border.all(color: Colors.white, width: 1.5),
-                                      boxShadow: const [
-                                        BoxShadow(color: Colors.pinkAccent, blurRadius: 6),
-                                      ],
-                                    ),
-                                    child: const UserAvatar(
-                                      imageUrl:
-                                          'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
-                                      radius: 13,
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-
-                          const Spacer(),
-
-                          // Stats: Profile Visitors, Following, Followers, Likes
-                          Row(
-                            children: [
-                              // Profile Visitors (Footprints) Button (Owner only)
-                              if (isMyProfile) ...[
-                                IconButton(
-                                  icon: Container(
-                                    padding: const EdgeInsets.all(6),
-                                    decoration: BoxDecoration(
-                                      color: cardData.isLight
-                                          ? Colors.purple.withValues(alpha: 0.12)
-                                          : Colors.purple.withValues(alpha: 0.25),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const Icon(
-                                      Icons.directions_walk_rounded,
-                                      size: 16,
-                                      color: Colors.purpleAccent,
-                                    ),
-                                  ),
-                                  tooltip: 'Profile Visitors',
-                                  onPressed: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => VisitorsScreen(
-                                          targetUserId: _user?.effectivePublicId ?? widget.userId,
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                                const SizedBox(width: 4),
-                              ],
-
-                              // Following
-                              GestureDetector(
-                                onTap: () {
-                                  UserListSheet.show(
-                                    context,
-                                    'Following',
-                                    userId: _user?.effectivePublicId ?? widget.userId,
-                                  );
-                                },
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        formatCount(followingCount),
-                                        style: TextStyle(
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w900,
-                                          color: cardData.primaryTextColor,
-                                        ),
-                                      ),
-                                      Text(
-                                        'Following',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: cardData.secondaryTextColor,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-
-                              const SizedBox(width: 4),
-
-                              // Followers
-                              GestureDetector(
-                                onTap: () {
-                                  UserListSheet.show(
-                                    context,
-                                    'Followers',
-                                    userId: _user?.effectivePublicId ?? widget.userId,
-                                  );
-                                },
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        formatCount(displayFollowers),
-                                        style: TextStyle(
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w900,
-                                          color: cardData.primaryTextColor,
-                                        ),
-                                      ),
-                                      Text(
-                                        'Followers',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: cardData.secondaryTextColor,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-
-                              const SizedBox(width: 4),
-
-                              // Likes Tap (Interactive popup dialog)
-                              GestureDetector(
-                                onTap: () {
-                                  showDialog(
-                                    context: context,
-                                    builder: (ctx) => AlertDialog(
-                                      backgroundColor: AppColors.getCard(isDark),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(20),
-                                      ),
-                                      title: Row(
-                                        children: [
-                                          const Icon(
-                                            Icons.favorite_rounded,
-                                            color: Colors.pinkAccent,
-                                            size: 24,
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Text(
-                                            'Total Likes',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              color: AppColors.getTextPrimary(isDark),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      content: Text(
-                                        isMyProfile
-                                            ? 'You have total $calculatedLikes likes across all your videos and posts.'
-                                            : '${_user?.name ?? 'User'} has total $calculatedLikes likes across all videos and posts.',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          color: AppColors.getTextSecondary(isDark),
-                                        ),
-                                      ),
-                                      actions: [
-                                        ElevatedButton(
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: AppColors.getPrimary(isDark),
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.circular(12),
-                                            ),
-                                          ),
-                                          onPressed: () => Navigator.pop(ctx),
-                                          child: const Text(
-                                            'OK',
-                                            style: TextStyle(
-                                              color: Colors.white,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                },
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        formatCount(calculatedLikes),
-                                        style: TextStyle(
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w900,
-                                          color: cardData.primaryTextColor,
-                                        ),
-                                      ),
-                                      Text(
-                                        'Likes',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: cardData.secondaryTextColor,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
+                      Icon(
+                        Icons.videocam_rounded,
+                        color: Colors.white,
+                        size: 12,
                       ),
-
-                      const SizedBox(height: 12),
-
-                      // User Identity Row: Name | Gender/Age Pill | LIVE Badge
-                      Row(
-                        children: [
-                          Flexible(
-                            child: NobleBadgeHelper.buildStyledUsername(
-                              text: _user!.name.isNotEmpty
-                                  ? _user!.name
-                                  : (_user!.displayName.isNotEmpty
-                                        ? _user!.displayName
-                                        : 'User ${_user!.id}'),
-                              nobleTitle: _user!.nobleTitle,
-                              style: TextStyle(
-                                fontSize: 21,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 0.2,
-                                color: cardData.primaryTextColor,
-                              ),
-                              isDark: !cardData.isLight,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-
-                          // Gender & Age Pill
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 3,
-                            ),
-                            decoration: BoxDecoration(
-                              color: _user!.gender.toLowerCase() == 'female'
-                                  ? const Color(0xFFE91E63)
-                                  : const Color(0xFF3897F0),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  _user!.gender.toLowerCase() == 'female'
-                                      ? Icons.female_rounded
-                                      : Icons.male_rounded,
-                                  size: 12,
-                                  color: Colors.white,
-                                ),
-                                const SizedBox(width: 3),
-                                Text(
-                                  _user!.age > 0 ? '${_user!.age}' : _user!.gender,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-
-                          // Live Tag Badge (if live)
-                          if (isInActiveRoom) ...[
-                            const SizedBox(width: 6),
-                            GestureDetector(
-                              onTap: () => _openUserActiveRoom(context, _user!.liveRoomId),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 3,
-                                ),
-                                decoration: BoxDecoration(
-                                  gradient: const LinearGradient(
-                                    colors: [Color(0xFFFF1744), Color(0xFFFF5252)],
-                                  ),
-                                  borderRadius: BorderRadius.circular(12),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.redAccent.withValues(alpha: 0.5),
-                                      blurRadius: 6,
-                                      spreadRadius: 1,
-                                    ),
-                                  ],
-                                ),
-                                child: const Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.videocam_rounded,
-                                      color: Colors.white,
-                                      size: 12,
-                                    ),
-                                    SizedBox(width: 3),
-                                    Text(
-                                      'LIVE',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 10.5,
-                                        fontWeight: FontWeight.w900,
-                                        letterSpacing: 0.3,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-
-                      const SizedBox(height: 6),
-
-                      // Bounded User ID + Copy Button + Country Flag + Room/Agency Roles
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              'ID: ${_user!.id}',
-                              style: TextStyle(
-                                color: cardData.secondaryTextColor,
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          GestureDetector(
-                            onTap: () {
-                              Clipboard.setData(ClipboardData(text: _user!.id));
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('User ID copied to clipboard!'),
-                                ),
-                              );
-                            },
-                            child: Icon(
-                              Icons.copy_rounded,
-                              color: cardData.iconColor,
-                              size: 14,
-                            ),
-                          ),
-                          if (_user!.countryFlag.isNotEmpty) ...[
-                            const SizedBox(width: 8),
-                            Text(
-                              _user!.countryFlag,
-                              style: const TextStyle(fontSize: 15),
-                            ),
-                          ],
-
-                          const SizedBox(width: 8),
-
-                          // Room / Agency Role Tag
-                          if (_user!.isHost)
-                            _buildRoleTag('Owner / Host', const Color(0xFFFF9800))
-                          else if (_user!.isAgency)
-                            _buildRoleTag('Agency', const Color(0xFF00ACC1))
-                          else if (_user!.isBd)
-                            _buildRoleTag('BD Admin', const Color(0xFF8C38FF)),
-                        ],
-                      ),
-
-                      const SizedBox(height: 10),
-
-                      // 4 Level Badges Row & Noble Tag
-                      _buildProfileTags(cardData.isLight, svip),
-
-                      // Custom Titles / Banners (up to 3 displayed directly in card)
-                      if (_user!.customTitles.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          physics: const BouncingScrollPhysics(),
-                          child: Row(
-                            children: _user!.customTitles.take(3).map((titleAsset) {
-                              return Padding(
-                                padding: const EdgeInsets.only(right: 6),
-                                child: Image.asset(
-                                  titleAsset,
-                                  height: 28,
-                                  fit: BoxFit.contain,
-                                  errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                                ),
-                              );
-                            }).toList(),
-                          ),
+                      SizedBox(width: 3),
+                      Text(
+                        'LIVE',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0.3,
                         ),
-                      ],
+                      ),
                     ],
                   ),
                 ),
-              ],
+              ),
+            ],
+          ],
+        ),
+
+        const SizedBox(height: 6),
+
+        // Bounded User ID + Copy Button + Country Flag + Room/Agency Roles
+        Row(
+          children: [
+            Flexible(
+              child: Text(
+                'ID: ${_user!.id}',
+                style: TextStyle(
+                  color: cardData.secondaryTextColor,
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 4),
+            GestureDetector(
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: _user!.id));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('User ID copied to clipboard!'),
+                  ),
+                );
+              },
+              child: Icon(
+                Icons.copy_rounded,
+                color: cardData.iconColor,
+                size: 14,
+              ),
+            ),
+            if (_user!.countryFlag.isNotEmpty) ...[
+              const SizedBox(width: 8),
+              Text(
+                _user!.countryFlag,
+                style: const TextStyle(fontSize: 15),
+              ),
+            ],
+
+            const SizedBox(width: 8),
+
+            // Room / Agency Role Tag
+            if (_user!.isHost)
+              _buildRoleTag('Owner / Host', const Color(0xFFFF9800))
+            else if (_user!.isAgency)
+              _buildRoleTag('Agency', const Color(0xFF00ACC1))
+            else if (_user!.isBd)
+              _buildRoleTag('BD Admin', const Color(0xFF8C38FF)),
+          ],
+        ),
+
+        const SizedBox(height: 10),
+
+        // 4 Level Badges Row & Noble Tag
+        _buildProfileTags(cardData.isLight, svip),
+
+        // Custom Titles / Banners (up to 3 displayed directly in card)
+        if (_user!.customTitles.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            child: Row(
+              children: _user!.customTitles.take(3).map((titleAsset) {
+                return Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: Image.asset(
+                    titleAsset,
+                    height: 28,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                  ),
+                );
+              }).toList(),
             ),
           ),
-        ),
+        ],
       ],
+    );
+  }
+
+  Widget _buildBlockBanner(BuildContext context, bool isDark) {
+    final auth = context.read<AuthProvider>();
+    final primaryText = AppColors.getTextPrimary(isDark);
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.redAccent.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.redAccent.withValues(alpha: 0.5),
+        ),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.block_rounded,
+            color: Colors.redAccent,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'You have blocked this user. Unblock to view interactions.',
+              style: TextStyle(
+                color: primaryText,
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              auth.unblockUser(_user!.id).then((_) {
+                if (mounted) setState(() {});
+              });
+            },
+            child: const Text(
+              'Unblock',
+              style: TextStyle(
+                color: Colors.redAccent,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -2461,9 +2490,8 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
   }
 
   // MEDAL GALLERY (Header + Medal Badges)
-  // Shows ONLY medals the user has actually EQUIPPED
-  Widget _buildMedalGallery(bool isDark) {
-    final primaryText = AppColors.getTextPrimary(isDark);
+  // Shows ONLY medals the user has actually EQUIPPED inside the unified card container
+  Widget _buildMedalGallery(bool isDark, ProfileCardData cardData) {
     final targetUser = _user ?? context.read<AuthProvider>().currentUser;
     final noble = context.read<NobleProvider>();
     final isMe = _user == null || _user!.id == context.read<AuthProvider>().currentUser.id;
@@ -2484,7 +2512,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
     final equippedCount = equippedMedals.length;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2496,7 +2524,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w900,
-                  color: primaryText,
+                  color: cardData.primaryTextColor,
                 ),
               ),
               GestureDetector(
@@ -2535,10 +2563,10 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 20),
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF161224) : Colors.grey[100],
+                color: cardData.surfaceColor,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: isDark ? Colors.white10 : Colors.black12,
+                  color: cardData.surfaceBorderColor,
                 ),
               ),
               child: Center(
@@ -2546,7 +2574,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                   'No medals equipped yet',
                   style: TextStyle(
                     fontSize: 13,
-                    color: AppColors.getTextSecondary(isDark),
+                    color: cardData.secondaryTextColor,
                   ),
                 ),
               ),
@@ -2621,10 +2649,8 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
     );
   }
 
-  // BADGE GALLERY (Shows ONLY active assigned badges & real count)
-  Widget _buildBadgeGallery(bool isDark, SVIPProvider svip) {
-    final primaryText = AppColors.getTextPrimary(isDark);
-
+  // BADGE GALLERY (Shows ONLY active assigned badges & real count) inside unified card container
+  Widget _buildBadgeGallery(bool isDark, SVIPProvider svip, ProfileCardData cardData) {
     // Collect ONLY active assigned badges for this user
     final List<Map<String, dynamic>> activeBadges = [];
 
@@ -2715,7 +2741,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
     final badgeCount = activeBadges.length;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2725,9 +2751,9 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
               Text(
                 'Badge & Role Gallery',
                 style: TextStyle(
-                  fontSize: 16,
+                  fontSize: 18,
                   fontWeight: FontWeight.w900,
-                  color: primaryText,
+                  color: cardData.primaryTextColor,
                 ),
               ),
               GestureDetector(
@@ -2760,10 +2786,10 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 20),
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF161224) : Colors.grey[100],
+                color: cardData.surfaceColor,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: isDark ? Colors.white10 : Colors.black12,
+                  color: cardData.surfaceBorderColor,
                 ),
               ),
               child: Center(
@@ -2771,7 +2797,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                   'No active badges or SVIP assigned',
                   style: TextStyle(
                     fontSize: 13,
-                    color: AppColors.getTextSecondary(isDark),
+                    color: cardData.secondaryTextColor,
                   ),
                 ),
               ),
@@ -2787,7 +2813,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                       assetPath: b['asset'] as String,
                       fallbackLabel: b['label'] as String,
                       fallbackColor: b['color'] as Color,
-                      isDark: isDark,
+                      cardData: cardData,
                       onTap: () =>
                           _showAllBadgesAndRolesSheet(context, isDark, svip),
                     ),
@@ -2806,7 +2832,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
     required String fallbackLabel,
     required Color fallbackColor,
     required VoidCallback onTap,
-    bool isDark = true,
+    required ProfileCardData cardData,
   }) {
     return GestureDetector(
       onTap: onTap,
@@ -2814,7 +2840,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
         height: 52,
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF221A36) : const Color(0xFFF3EDF7),
+          color: cardData.badgeSurfaceColor,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: fallbackColor.withValues(alpha: 0.35),
@@ -3334,16 +3360,14 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
     );
   }
 
-  // 6. DIAGRAM B: RELATIONSHIP + HONOR
-  Widget _buildRelationshipAndHonor(bool isDark) {
+  // 6. DIAGRAM B: RELATIONSHIP + HONOR inside unified card container
+  Widget _buildRelationshipAndHonor(bool isDark, ProfileCardData cardData) {
     final cpFromRelation = _relationData != null &&
         (_relationData!['hasCp'] == true ||
             _relationData!['partner'] != null ||
             _relationData!['relationship'] != null);
     final hasCp = (_user!.cpPartnerId != null && _user!.cpPartnerId!.isNotEmpty) || cpFromRelation;
     final hasCustomTitles = _user!.customTitles.isNotEmpty;
-    final primaryText = AppColors.getTextPrimary(isDark);
-    final secondaryText = AppColors.getTextSecondary(isDark);
 
     String partnerInfo = 'Partner Assigned';
     if (_relationData != null) {
@@ -3359,7 +3383,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
     if (!hasCp && !hasCustomTitles) return const SizedBox.shrink();
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -3371,7 +3395,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w900,
-                  color: primaryText,
+                  color: cardData.primaryTextColor,
                 ),
               ),
               GestureDetector(
@@ -3407,10 +3431,10 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
               padding: const EdgeInsets.all(14),
               margin: const EdgeInsets.only(bottom: 12),
               decoration: BoxDecoration(
-                color: AppColors.getCard(isDark),
+                color: cardData.surfaceColor,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.getBorder(isDark)),
-                boxShadow: AppColors.cardShadow,
+                border: Border.all(color: cardData.surfaceBorderColor),
+                boxShadow: cardData.isLight ? null : AppColors.cardShadow,
               ),
               child: Row(
                 children: [
@@ -3436,13 +3460,13 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
-                            color: primaryText,
+                            color: cardData.primaryTextColor,
                           ),
                         ),
                         const SizedBox(height: 2),
                         Text(
                           'CP Level ${_user!.cpPoints ~/ 100 + 1} • $partnerInfo',
-                          style: TextStyle(fontSize: 11, color: secondaryText),
+                          style: TextStyle(fontSize: 11, color: cardData.secondaryTextColor),
                         ),
                       ],
                     ),
@@ -3466,13 +3490,13 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                       vertical: 6,
                     ),
                     decoration: BoxDecoration(
-                      color: AppColors.getCard(isDark),
+                      color: cardData.surfaceColor,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppColors.getBorder(isDark)),
+                      border: Border.all(color: cardData.surfaceBorderColor),
                     ),
                     child: Text(
                       'Custom Title',
-                      style: TextStyle(color: primaryText, fontSize: 12),
+                      style: TextStyle(color: cardData.primaryTextColor, fontSize: 12),
                     ),
                   ),
                 );
@@ -3483,24 +3507,22 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
     );
   }
 
-  // 7. DIAGRAM B: PROFILE TABS (Post (Default) | Relation | Honor | Glory)
-  Widget _buildProfileContent(bool isDark) {
-    final primaryText = AppColors.getTextPrimary(isDark);
-
+  // 7. DIAGRAM B: PROFILE TABS (Post (Default) | Relation | Honor | Glory) inside unified card container
+  Widget _buildProfileContent(bool isDark, ProfileCardData cardData) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Tabs (Post, Relation, Honor, Glory)
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: EdgeInsets.zero,
           child: TabBar(
             controller: _tabController,
             isScrollable: true,
             indicatorColor: const Color(0xFF8C38FF),
             indicatorSize: TabBarIndicatorSize.label,
             indicatorWeight: 3,
-            labelColor: primaryText,
-            unselectedLabelColor: Colors.grey,
+            labelColor: cardData.primaryTextColor,
+            unselectedLabelColor: cardData.secondaryTextColor,
             labelStyle: const TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w900,
@@ -3523,18 +3545,18 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
 
         // Tab Content View
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: EdgeInsets.zero,
           child: AnimatedBuilder(
             animation: _tabController,
             builder: (context, _) {
               if (_tabController.index == 0) {
-                return _buildPostTab(isDark);
+                return _buildPostTab(isDark, cardData: cardData);
               } else if (_tabController.index == 1) {
-                return _buildRelationTab(isDark);
+                return _buildRelationTab(isDark, cardData: cardData);
               } else if (_tabController.index == 2) {
-                return _buildHonorTab(isDark);
+                return _buildHonorTab(isDark, cardData: cardData);
               } else {
-                return _buildGloryTab(isDark);
+                return _buildGloryTab(isDark, cardData: cardData);
               }
             },
           ),
@@ -3543,9 +3565,9 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
     );
   }
 
-  Widget _buildPostTab(bool isDark) {
-    final primaryText = AppColors.getTextPrimary(isDark);
-    final secondaryText = AppColors.getTextSecondary(isDark);
+  Widget _buildPostTab(bool isDark, {ProfileCardData? cardData}) {
+    final primaryText = cardData?.primaryTextColor ?? AppColors.getTextPrimary(isDark);
+    final secondaryText = cardData?.secondaryTextColor ?? AppColors.getTextSecondary(isDark);
     final auth = context.watch<AuthProvider>();
     final isMe =
         auth.currentUser.id.isNotEmpty &&
@@ -4223,13 +4245,13 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
     );
   }
 
-  Widget _buildRelationTab(bool isDark) {
-    final primaryText = AppColors.getTextPrimary(isDark);
-    final secondaryText = AppColors.getTextSecondary(isDark);
-    final cardBg = isDark ? const Color(0xFF1E1F28) : Colors.white;
-    final borderColor = isDark
-        ? Colors.white.withOpacity(0.08)
-        : Colors.black.withOpacity(0.06);
+  Widget _buildRelationTab(bool isDark, {ProfileCardData? cardData}) {
+    final primaryText = cardData?.primaryTextColor ?? AppColors.getTextPrimary(isDark);
+    final secondaryText = cardData?.secondaryTextColor ?? AppColors.getTextSecondary(isDark);
+    final cardBg = cardData != null ? cardData.surfaceColor : (isDark ? const Color(0xFF1E1F28) : Colors.white);
+    final borderColor = cardData != null ? cardData.surfaceBorderColor : (isDark
+        ? Colors.white.withValues(alpha: 0.08)
+        : Colors.black.withValues(alpha: 0.06));
 
     final rel = _relationData ?? {};
     final hasRelationship = rel['hasRelationship'] == true;
@@ -4708,7 +4730,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
     );
   }
 
-  Widget _buildHonorTab(bool isDark) {
+  Widget _buildHonorTab(bool isDark, {ProfileCardData? cardData}) {
     if (_isLoadingHonor) {
       return Container(
         padding: const EdgeInsets.symmetric(vertical: 40),
@@ -4935,7 +4957,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
     );
   }
 
-  Widget _buildGloryTab(bool isDark) {
+  Widget _buildGloryTab(bool isDark, {ProfileCardData? cardData}) {
     if (_isLoadingGifts) {
       return Container(
         padding: const EdgeInsets.symmetric(vertical: 40),

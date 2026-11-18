@@ -247,25 +247,18 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
 
     return Container(
       decoration: BoxDecoration(
-        color: cardData.isDefault
-            ? const Color(0xFF141024)
-            : (cardData.isLight ? const Color(0xFFFAF8F5) : const Color(0xFF141024)),
+        color: cardData.cardBackgroundColor,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         boxShadow: const [
           BoxShadow(color: Colors.black87, blurRadius: 30, spreadRadius: 5),
         ],
-        border: cardData.isDefault
-            ? Border.all(
-                color: Colors.amberAccent.withValues(alpha: 0.3),
-                width: 1,
-              )
-            : null, // REMOVED default orange/golden border when alternative card equipped!
+        border: cardData.cardBorder,
       ),
       child: ClipRRect(
         borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         child: Stack(
           children: [
-            // EQUIPPED CARD BACKGROUND (Clean replacement, no muddy dark gradients)
+            // EQUIPPED CARD BACKGROUND (Clean replacement, natural aspect ratio, no distortion)
             if (hasCard)
               Positioned(
                 top: 0,
@@ -299,12 +292,12 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                         },
                       ),
               ),
-            // TOP LAYER: Room Mini Profile Content
+            // TOP LAYER: Room Mini Profile Content inside Unified Custom Card
             SafeArea(
               top: false,
               child: ConstrainedBox(
                 constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(context).size.height * 0.58,
+                  maxHeight: MediaQuery.of(context).size.height * 0.85,
                 ),
                 child: SingleChildScrollView(
                   physics: const BouncingScrollPhysics(),
@@ -402,10 +395,12 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                               child: NobleBadgeHelper.buildStyledUsername(
                                 text: user.displayName,
                                 nobleTitle: user.hasActiveNoble ? user.nobleTitle : null,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
+                                  color: cardData.primaryTextColor,
                                 ),
+                                isDark: !cardData.isLight,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -465,7 +460,7 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                               'ID: ${user.id}',
                               style: TextStyle(
                                 fontSize: 11,
-                                color: AppColors.getTextSecondary(widget.isDark),
+                                color: cardData.secondaryTextColor,
                               ),
                             ),
                             const SizedBox(width: 4),
@@ -479,7 +474,7 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                               child: Icon(
                                 Icons.copy_rounded,
                                 size: 12,
-                                color: AppColors.getTextSecondary(widget.isDark),
+                                color: cardData.secondaryTextColor,
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -487,7 +482,7 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                               '|  ${user.countryFlag} ${user.cleanCountryName}',
                               style: TextStyle(
                                 fontSize: 11,
-                                color: AppColors.getTextSecondary(widget.isDark),
+                                color: cardData.secondaryTextColor,
                               ),
                             ),
                           ],
@@ -507,9 +502,9 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                             child: Text(
                               user.bio,
                               textAlign: TextAlign.center,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 11,
-                                color: Colors.white70,
+                                color: cardData.secondaryTextColor,
                                 fontStyle: FontStyle.italic,
                               ),
                               maxLines: 2,
@@ -527,9 +522,9 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                   Container(
                     padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
                     decoration: BoxDecoration(
-                      color: widget.isDark ? const Color(0xFF1E1A33) : const Color(0xFFF2EFFC),
+                      color: cardData.surfaceColor,
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.white12),
+                      border: Border.all(color: cardData.surfaceBorderColor),
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -542,6 +537,7 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                           assetPath: 'assets/images/level_logo_wealth.png',
                           fallbackIcon: Icons.diamond_rounded,
                           accentColor: const Color(0xFF00E5FF),
+                          cardData: cardData,
                         ),
                         // 2. Receiving (Charm)
                         _buildCompactLevelBadge(
@@ -551,6 +547,7 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                           assetPath: 'assets/images/level_logo_charm.png',
                           fallbackIcon: Icons.favorite_rounded,
                           accentColor: const Color(0xFFFF4081),
+                          cardData: cardData,
                         ),
                         // 3. Game
                         _buildCompactLevelBadge(
@@ -560,6 +557,7 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                           assetPath: 'assets/images/level_logo_game.png',
                           fallbackIcon: Icons.sports_esports_rounded,
                           accentColor: const Color(0xFFB388FF),
+                          cardData: cardData,
                         ),
                         // 4. Account
                         _buildCompactLevelBadge(
@@ -569,6 +567,7 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                           assetPath: 'assets/images/level_logo_account.png',
                           fallbackIcon: Icons.stars_rounded,
                           accentColor: const Color(0xFF00E676),
+                          cardData: cardData,
                         ),
                       ],
                     ),
@@ -663,9 +662,9 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: widget.isDark ? const Color(0xFF1B162E) : const Color(0xFFF7F5FE),
+                      color: cardData.surfaceColor,
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.white10),
+                      border: Border.all(color: cardData.surfaceBorderColor),
                     ),
                     child: Row(
                       children: [
@@ -674,7 +673,7 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
-                            color: AppColors.getTextSecondary(widget.isDark),
+                            color: cardData.secondaryTextColor,
                           ),
                         ),
                         const SizedBox(width: 6),
@@ -719,12 +718,12 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                                   'No medals assigned',
                                   style: TextStyle(
                                     fontSize: 11,
-                                    color: Colors.grey.shade500,
+                                    color: cardData.secondaryTextColor.withValues(alpha: 0.7),
                                     fontStyle: FontStyle.italic,
                                   ),
                                 ),
                         ),
-                        const Icon(Icons.chevron_right_rounded, size: 16, color: Colors.grey),
+                        Icon(Icons.chevron_right_rounded, size: 16, color: cardData.secondaryTextColor),
                       ],
                     ),
                   ),
@@ -740,7 +739,7 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
-                          color: AppColors.getTextPrimary(widget.isDark),
+                          color: cardData.primaryTextColor,
                         ),
                       ),
                       GestureDetector(
@@ -772,15 +771,15 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                   const SizedBox(height: 6),
                   Row(
                     children: [
-                      _quickGiftItem(context, '🌹', 'Free', 'x9', user),
+                      _quickGiftItem(context, '🌹', 'Free', 'x9', user, cardData: cardData),
                       const SizedBox(width: 6),
-                      _quickGiftItem(context, '💎', 'Free', 'x68', user),
+                      _quickGiftItem(context, '💎', 'Free', 'x68', user, cardData: cardData),
                       const SizedBox(width: 6),
-                      _quickGiftItem(context, '🫶', '600', 'Coins', user),
+                      _quickGiftItem(context, '🫶', '600', 'Coins', user, cardData: cardData),
                       const SizedBox(width: 6),
-                      _quickGiftItem(context, '🍹', '100', 'Coins', user),
+                      _quickGiftItem(context, '🍹', '100', 'Coins', user, cardData: cardData),
                       const SizedBox(width: 6),
-                      _quickGiftItem(context, '🌹', '5', 'Coins', user),
+                      _quickGiftItem(context, '🌹', '5', 'Coins', user, cardData: cardData),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -794,7 +793,7 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                             : 'invite to join the room for free',
                         style: TextStyle(
                           fontSize: 10,
-                          color: Colors.grey.shade400,
+                          color: cardData.secondaryTextColor,
                         ),
                       ),
                     ),
@@ -885,10 +884,10 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                         decoration: BoxDecoration(
-                          color: widget.isDark ? const Color(0xFF1E1738) : const Color(0xFFF3EDFA),
+                          color: cardData.surfaceColor,
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
-                            color: widget.isDark ? Colors.white12 : Colors.black12,
+                            color: cardData.surfaceBorderColor,
                           ),
                         ),
                         child: Column(
@@ -907,7 +906,7 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                                         fontSize: 9,
                                         fontWeight: FontWeight.w900,
                                         letterSpacing: 0.5,
-                                        color: AppColors.getTextSecondary(widget.isDark),
+                                        color: cardData.secondaryTextColor,
                                       ),
                                     ),
                                   ],
@@ -927,7 +926,7 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                                 else
                                   Text(
                                     'In Audience',
-                                    style: TextStyle(fontSize: 9, color: Colors.grey.shade400, fontStyle: FontStyle.italic),
+                                    style: TextStyle(fontSize: 9, color: cardData.secondaryTextColor, fontStyle: FontStyle.italic),
                                   ),
                               ],
                             ),
@@ -1336,11 +1335,12 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
     required String assetPath,
     required IconData fallbackIcon,
     required Color accentColor,
+    ProfileCardData? cardData,
   }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
       decoration: BoxDecoration(
-        color: Colors.black26,
+        color: (cardData?.isLight ?? false) ? Colors.black.withValues(alpha: 0.05) : Colors.black26,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: accentColor.withValues(alpha: 0.3)),
       ),
@@ -1385,8 +1385,9 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
     String emoji,
     String tagText,
     String subText,
-    UserModel targetUser,
-  ) {
+    UserModel targetUser, {
+    ProfileCardData? cardData,
+  }) {
     return Expanded(
       child: GestureDetector(
         onTap: () {
@@ -1413,9 +1414,9 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 5),
           decoration: BoxDecoration(
-            color: widget.isDark ? const Color(0xFF221C3B) : const Color(0xFFF3EFFF),
+            color: cardData != null ? cardData.surfaceColor : (widget.isDark ? const Color(0xFF221C3B) : const Color(0xFFF3EFFF)),
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Colors.purple.withValues(alpha: 0.2)),
+            border: Border.all(color: cardData != null ? cardData.surfaceBorderColor : Colors.purple.withValues(alpha: 0.2)),
           ),
           child: Column(
             children: [
@@ -1431,8 +1432,8 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
               ),
               Text(
                 subText,
-                style: const TextStyle(
-                  color: Colors.grey,
+                style: TextStyle(
+                  color: cardData?.secondaryTextColor ?? Colors.grey,
                   fontSize: 7.5,
                 ),
               ),

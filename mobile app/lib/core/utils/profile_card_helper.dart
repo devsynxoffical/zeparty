@@ -30,6 +30,26 @@ class ProfileCardData {
 
   bool get hasCustomCard => !isDefault && (assetPath != null || networkUrl != null);
 
+  /// Visual container background color matching the card theme.
+  Color get cardBackgroundColor =>
+      isDefault ? const Color(0xFF141024) : (isLight ? const Color(0xFFFAF8F5) : const Color(0xFF141024));
+
+  /// Visual container border: Default card uses golden/orange border; custom cards are borderless.
+  BoxBorder? get cardBorder =>
+      isDefault ? Border.all(color: const Color(0xFFFFB300), width: 1.5) : null;
+
+  /// Surface background for inner sub-sections (Medals, Badges, CP, Level pills).
+  Color get surfaceColor =>
+      isLight ? const Color(0x0C000000) : const Color(0xFF1E1A33);
+
+  /// Surface border for inner sub-sections.
+  Color get surfaceBorderColor =>
+      isLight ? const Color(0x18000000) : Colors.white12;
+
+  /// Badge container background color.
+  Color get badgeSurfaceColor =>
+      isLight ? const Color(0x10000000) : const Color(0xFF221A36);
+
   /// Default fallback card appearance (Black background with golden/orange border).
   static const ProfileCardData defaultCard = ProfileCardData(
     isDefault: true,
