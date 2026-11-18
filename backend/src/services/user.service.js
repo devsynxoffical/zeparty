@@ -712,8 +712,10 @@ export async function getSelfProfile(userId, db = prisma) {
   const selfIsVip = Boolean(selfSvipLevel > 0 || selfVipLevel > 0);
   const selfSvipTag = selfSvipLevel > 0 ? ('assets/svip/svip' + selfSvipLevel + '_tag.png') : null;
   const selfVipDisplay = selfSvipLevel > 0 ? ('SVIP ' + selfSvipLevel) : (selfVipLevel > 0 ? ('VIP ' + selfVipLevel) : '0');
-  const selfSkinUrl = user.profile?.profileSkinUrl || equippedSkin || (selfSvipLevel > 0 ? `assets/svip/svip${selfSvipLevel}_card.webp` : null);
-  const selfCardUrl = user.profile?.profileCardUrl || equippedCard || activeNobleSelf?.cardAsset || (selfSvipLevel > 0 ? `assets/svip/svip${selfSvipLevel}_profilecard.webp` : null);
+  const isSkinExplicitlyUnequipped = user.profile?.equippedSkinId === 'none' || user.profile?.profileSkinUrl === 'none';
+  const isCardExplicitlyUnequipped = user.profile?.equippedProfileCardId === 'none' || user.profile?.profileCardUrl === 'none';
+  const selfSkinUrl = isSkinExplicitlyUnequipped ? 'none' : (user.profile?.profileSkinUrl || equippedSkin || null);
+  const selfCardUrl = isCardExplicitlyUnequipped ? 'none' : (user.profile?.profileCardUrl || equippedCard || null);
   const selfSvipPoints = user.profile?.svipPoints != null ? Number(user.profile.svipPoints) : 0;
   const { activeRoleTags, roleTags, badgeGallery } = resolveActiveRoleTagsAndBadges(user, activeNobleSelf);
   if (profileWithPresence) {
@@ -1062,8 +1064,10 @@ export async function getPublicProfile(userId, db = prisma) {
   const pubIsVip = Boolean(pubSvipLevel > 0 || pubVipLevel > 0);
   const pubSvipTag = pubSvipLevel > 0 ? ('assets/svip/svip' + pubSvipLevel + '_tag.png') : null;
   const pubVipDisplay = pubSvipLevel > 0 ? ('SVIP ' + pubSvipLevel) : (pubVipLevel > 0 ? ('VIP ' + pubVipLevel) : '0');
-  const pubSkinUrl = publicUser.profile?.profileSkinUrl || equippedSkin || (pubSvipLevel > 0 ? `assets/svip/svip${pubSvipLevel}_card.webp` : null);
-  const pubCardUrl = publicUser.profile?.profileCardUrl || equippedCard || activeNoblePub?.cardAsset || (pubSvipLevel > 0 ? `assets/svip/svip${pubSvipLevel}_profilecard.webp` : null);
+  const isPubSkinExplicitlyUnequipped = publicUser.profile?.equippedSkinId === 'none' || publicUser.profile?.profileSkinUrl === 'none';
+  const isPubCardExplicitlyUnequipped = publicUser.profile?.equippedProfileCardId === 'none' || publicUser.profile?.profileCardUrl === 'none';
+  const pubSkinUrl = isPubSkinExplicitlyUnequipped ? 'none' : (publicUser.profile?.profileSkinUrl || equippedSkin || null);
+  const pubCardUrl = isPubCardExplicitlyUnequipped ? 'none' : (publicUser.profile?.profileCardUrl || equippedCard || null);
   const pubSvipPoints = publicUser.profile?.svipPoints != null ? Number(publicUser.profile.svipPoints) : 0;
   const { activeRoleTags, roleTags, badgeGallery } = resolveActiveRoleTagsAndBadges(publicUser, activeNoblePub);
   if (profileWithPresence) {

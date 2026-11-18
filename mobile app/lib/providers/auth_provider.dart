@@ -135,7 +135,8 @@ class AuthProvider extends ChangeNotifier {
     if (_currentUser != null) {
       final shouldClear = skin == null || skin.isEmpty || skin == 'none';
       _currentUser = _currentUser!.copyWith(
-        profileSkinUrl: shouldClear ? null : skin,
+        profileSkinUrl: shouldClear ? 'none' : skin,
+        equippedSkinId: shouldClear ? 'none' : skin,
         clearProfileSkin: shouldClear,
       );
       _saveUserLocalSession(_currentUser!);
@@ -147,7 +148,8 @@ class AuthProvider extends ChangeNotifier {
     if (_currentUser != null) {
       final shouldClear = card == null || card.isEmpty || card == 'none';
       _currentUser = _currentUser!.copyWith(
-        profileCardUrl: shouldClear ? null : card,
+        profileCardUrl: shouldClear ? 'none' : card,
+        equippedProfileCardId: shouldClear ? 'none' : card,
         clearProfileCard: shouldClear,
       );
       _saveUserLocalSession(_currentUser!);

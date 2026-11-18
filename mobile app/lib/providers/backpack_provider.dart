@@ -16,6 +16,9 @@ class BackpackProvider extends ChangeNotifier {
   bool _isLoading = false;
   bool get isLoading => _isLoading;
 
+  bool _hasLoaded = false;
+  bool get hasLoaded => _hasLoaded;
+
   String? _errorMessage;
   String? get errorMessage => _errorMessage;
 
@@ -265,8 +268,9 @@ class BackpackProvider extends ChangeNotifier {
             final svipFrameAsset = 'assets/svip/svip${svipLvl}_frame.webp';
             final hasSvipFrame = mergedAssets.any((a) => a.asset?.imageUrl == svipFrameAsset || a.id.contains('svip$svipLvl-frame'));
             if (!hasSvipFrame) {
-              final isFrameEquipped = activeUser.avatarFrame == svipFrameAsset ||
-                  ((activeUser.avatarFrame.isEmpty || activeUser.avatarFrame == 'none') && svipLvl == maxLvl);
+              final isFrameEquipped = activeUser.avatarFrame.isNotEmpty &&
+                  activeUser.avatarFrame != 'none' &&
+                  activeUser.avatarFrame == svipFrameAsset;
               mergedAssets.insert(0, UserAssetModel(
                 id: 'assigned-frame-svip$svipLvl-${activeUser.id}',
                 userId: activeUser.id,
@@ -339,7 +343,7 @@ class BackpackProvider extends ChangeNotifier {
               id: 'assigned-badge-svip$svipLvl-${activeUser.id}',
               userId: activeUser.id,
               assetId: 'assigned-asset-svip$svipLvl-badge',
-              isEquipped: svipLvl == maxLvl,
+              isEquipped: false,
               expiresAt: DateTime.now().add(const Duration(days: 365)),
               isExpired: false,
               asset: StoreItemModel(
@@ -358,6 +362,7 @@ class BackpackProvider extends ChangeNotifier {
 
       _userAssets = mergedAssets;
       _isLoading = false;
+      _hasLoaded = true;
       _saveLocalPurchases();
       notifyListeners();
     } catch (e) {
@@ -460,7 +465,11 @@ class BackpackProvider extends ChangeNotifier {
     try {
       await _backpackRepository.unequipAsset(userAssetId);
     } catch (e) {
-      debugPrint('[BackpackProvider] Backend unequip error (using local unequip fallback): $e');
+      debugPrint('[BackpackProvider] Backend unequip error: $e');
+      _errorMessage = 'Failed to unequip asset';
+      _isLoading = false;
+      notifyListeners();
+      return false;
     }
 
     final index = _userAssets.indexWhere((a) => a.id == userAssetId || a.assetId == userAssetId || (a.asset != null && a.asset!.id == userAssetId));
@@ -476,9 +485,9 @@ class BackpackProvider extends ChangeNotifier {
       } else if (type.contains('BADGE') || cat.contains('BADGE') || assetName.contains('badge')) {
         onBadgeChanged?.call('');
       } else if (type.contains('SKIN') || type.contains('THEME') || cat.contains('THEME') || assetName.contains('skin')) {
-        onSkinChanged?.call('');
+        onSkinChanged?.call('none');
       } else if (type.contains('CARD') || cat.contains('CARD') || assetName.contains('card')) {
-        onCardChanged?.call('');
+        onCardChanged?.call('none');
       }
     }
 

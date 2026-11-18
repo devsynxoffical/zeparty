@@ -822,6 +822,10 @@ class UserModel {
       'isCountryLocked': isCountryLocked,
       'isPrivate': isPrivate,
       'customTitles': customTitles,
+      'profileCardUrl': profileCardUrl,
+      'profileSkinUrl': profileSkinUrl,
+      'equippedSkinId': equippedSkinId,
+      'equippedProfileCardId': equippedProfileCardId,
     };
   }
 
@@ -950,10 +954,10 @@ class UserModel {
       isCountryLocked: isCountryLocked ?? this.isCountryLocked,
       isPrivate: isPrivate ?? this.isPrivate,
       customTitles: customTitles ?? this.customTitles,
-      profileSkinUrl: clearProfileSkin ? null : (profileSkinUrl ?? this.profileSkinUrl),
-      profileCardUrl: clearProfileCard ? null : (profileCardUrl ?? this.profileCardUrl),
-      equippedSkinId: clearProfileSkin ? null : (equippedSkinId ?? this.equippedSkinId),
-      equippedProfileCardId: clearProfileCard ? null : (equippedProfileCardId ?? this.equippedProfileCardId),
+      profileSkinUrl: clearProfileSkin ? 'none' : (profileSkinUrl ?? this.profileSkinUrl),
+      profileCardUrl: clearProfileCard ? 'none' : (profileCardUrl ?? this.profileCardUrl),
+      equippedSkinId: clearProfileSkin ? 'none' : (equippedSkinId ?? this.equippedSkinId),
+      equippedProfileCardId: clearProfileCard ? 'none' : (equippedProfileCardId ?? this.equippedProfileCardId),
     );
   }
 }

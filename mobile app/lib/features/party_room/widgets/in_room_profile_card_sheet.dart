@@ -57,6 +57,7 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
   bool _isLeavingMic = false;
   UserModel? _authoritativeUser;
   bool _isLoadingAuthoritative = true;
+  bool _customCardLoadFailed = false;
 
   @override
   void initState() {
@@ -235,11 +236,13 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
 
     // Resolve Profile Card via Master Helper (Clean replacement of default card)
     final backpack = context.watch<BackpackProvider>();
-    final cardData = ProfileCardHelper.resolve(
-      user: user,
-      isMe: isMe,
-      backpack: backpack,
-    );
+    final cardData = _customCardLoadFailed
+        ? ProfileCardData.defaultCard
+        : ProfileCardHelper.resolve(
+            user: user,
+            isMe: isMe,
+            backpack: backpack,
+          );
     final hasCard = cardData.hasCustomCard;
 
     return Container(
@@ -273,17 +276,27 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                         cardData.networkUrl!,
                         fit: BoxFit.fitWidth,
                         alignment: Alignment.topCenter,
-                        errorBuilder: (_, _, _) => Container(
-                          color: cardData.isLight ? const Color(0xFFFAF8F5) : const Color(0xFF141024),
-                        ),
+                        errorBuilder: (context, error, stackTrace) {
+                          if (!_customCardLoadFailed) {
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (mounted) setState(() => _customCardLoadFailed = true);
+                            });
+                          }
+                          return const SizedBox.shrink();
+                        },
                       )
                     : Image.asset(
                         cardData.assetPath!,
                         fit: BoxFit.fitWidth,
                         alignment: Alignment.topCenter,
-                        errorBuilder: (_, _, _) => Container(
-                          color: cardData.isLight ? const Color(0xFFFAF8F5) : const Color(0xFF141024),
-                        ),
+                        errorBuilder: (context, error, stackTrace) {
+                          if (!_customCardLoadFailed) {
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (mounted) setState(() => _customCardLoadFailed = true);
+                            });
+                          }
+                          return const SizedBox.shrink();
+                        },
                       ),
               ),
             // TOP LAYER: Room Mini Profile Content

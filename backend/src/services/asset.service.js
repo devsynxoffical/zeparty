@@ -559,7 +559,7 @@ export async function getUserBackpack(userId, db = prisma) {
           id: `assigned-frame-${f.key}-${user.id}`,
           userId: user.id,
           assetId: `assigned-asset-${f.key}-frame`,
-          isEquipped: !isFrameUnequipped && !serialized.some((s) => s.isEquipped && s.asset?.assetType === 'FRAME') && (f.key === `svip${svipLvl}` || isRoleQualified),
+          isEquipped: false,
           expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
           isExpired: false,
           asset: {
@@ -643,7 +643,7 @@ export async function getUserBackpack(userId, db = prisma) {
       const svipSkinAsset = `assets/svip/svip${svipLvl}_card.webp`;
       const hasSkin = serialized.some((s) => s.asset?.imageUrl === svipSkinAsset || s.assetId === `assigned-asset-svip${svipLvl}-skin`);
       if (!hasSkin) {
-        const isSkinEquipped = user.profile?.profileSkinUrl === svipSkinAsset || (!user.profile?.profileSkinUrl && user.profile?.equippedSkinId !== 'none');
+        const isSkinEquipped = user.profile?.equippedSkinId !== 'none' && user.profile?.profileSkinUrl === svipSkinAsset;
         serialized.push({
           id: `assigned-skin-svip${svipLvl}-${user.id}`,
           userId: user.id,
@@ -670,7 +670,7 @@ export async function getUserBackpack(userId, db = prisma) {
       const svipCardAsset = `assets/svip/svip${svipLvl}_profilecard.webp`;
       const hasCard = serialized.some((s) => s.asset?.imageUrl === svipCardAsset || s.assetId === `assigned-asset-svip${svipLvl}-card`);
       if (!hasCard) {
-        const isCardEquipped = user.profile?.profileCardUrl === svipCardAsset || (!user.profile?.profileCardUrl && user.profile?.equippedProfileCardId !== 'none');
+        const isCardEquipped = user.profile?.equippedProfileCardId !== 'none' && user.profile?.profileCardUrl === svipCardAsset;
         serialized.push({
           id: `assigned-card-svip${svipLvl}-${user.id}`,
           userId: user.id,
@@ -990,6 +990,20 @@ export async function equipAsset(userId, userAssetId, { ipAddress } = {}, db = p
     );
   });
 
+  // Persist skin & profile card to UserProfile if applicable
+  const assetUrl = userAsset.asset?.thumbnailUrl || userAsset.asset?.staticFileUrl || userAsset.asset?.animationFileUrl || userAsset.asset?.imageUrl || '';
+  if (assetType === 'HOMEPAGE_SKIN') {
+    await db.userProfile.update({
+      where: { userId },
+      data: { equippedSkinId: userAsset.assetId, profileSkinUrl: assetUrl },
+    }).catch(() => {});
+  } else if (assetType === 'PROFILE_CARD') {
+    await db.userProfile.update({
+      where: { userId },
+      data: { equippedProfileCardId: userAsset.assetId, profileCardUrl: assetUrl },
+    }).catch(() => {});
+  }
+
   await logAudit({
     adminId: null,
     adminName: 'User Action',
@@ -1076,16 +1090,16 @@ export async function unequipAsset(userId, userAssetId, { ipAddress } = {}, db =
     await userAssetRepository.unequipAssetsByType(userId, assetType, db);
   }
 
-  // Clear skin / card fields from UserProfile if applicable
+  // Clear skin / card fields from UserProfile if applicable (persisting 'none' unequipped sentinel)
   if (assetType === 'HOMEPAGE_SKIN') {
     await db.userProfile.update({
       where: { userId },
-      data: { equippedSkinId: null, profileSkinUrl: null },
+      data: { equippedSkinId: 'none', profileSkinUrl: 'none' },
     }).catch(() => {});
   } else if (assetType === 'PROFILE_CARD') {
     await db.userProfile.update({
       where: { userId },
-      data: { equippedProfileCardId: null, profileCardUrl: null },
+      data: { equippedProfileCardId: 'none', profileCardUrl: 'none' },
     }).catch(() => {});
   }
 
@@ -1108,7 +1122,7 @@ export async function unequipAsset(userId, userAssetId, { ipAddress } = {}, db =
   // Invalidate user profile cache in Redis and persist unequipped sentinel
   try {
     if (redisProxy.isOpen && userId) {
-      await redisProxy.set(`user:unequipped:${assetType}:${userId}`, '1', 'EX', 30 * 86400);
+      await redisProxy.set(`user:unequipped:${assetType}:${userId}`, '1', 'EX', 365 * 86400);
       await redisProxy.del(`user:profile:${userId}`);
     }
   } catch (_) {}

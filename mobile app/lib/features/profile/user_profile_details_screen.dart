@@ -150,6 +150,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
   UserModel? _user;
   Map<String, dynamic>? _relationData;
   StreamSubscription? _userPresenceSub;
+  bool _customCardLoadFailed = false;
 
   List<Map<String, dynamic>> _receivedGifts = [];
   bool _isLoadingGifts = false;
@@ -1508,11 +1509,13 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
         _user!.cpPartnerId != null && _user!.cpPartnerId!.isNotEmpty;
 
     // Resolve Authoritative Profile Card & Dynamic Theme Adaptation
-    final cardData = ProfileCardHelper.resolve(
-      user: _user,
-      isMe: isMyProfile,
-      backpack: backpack,
-    );
+    final cardData = _customCardLoadFailed
+        ? ProfileCardData.defaultCard
+        : ProfileCardHelper.resolve(
+            user: _user,
+            isMe: isMyProfile,
+            backpack: backpack,
+          );
 
     // Calculate real likes
     int calculatedLikes = _user?.likesReceived ?? 0;
@@ -1705,25 +1708,38 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
             clipBehavior: Clip.antiAlias,
             child: Stack(
               children: [
-                // Equipped Card Graphic Background (Fills entire card, replacing default design)
+                // Equipped Card Graphic Background (Top-aligned, natural aspect ratio, no stretching)
                 if (cardData.hasCustomCard)
-                  Positioned.fill(
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
                     child: cardData.networkUrl != null
                         ? Image.network(
                             cardData.networkUrl!,
-                            fit: BoxFit.fill,
+                            fit: BoxFit.fitWidth,
                             alignment: Alignment.topCenter,
-                            errorBuilder: (_, _, _) => Container(
-                              color: const Color(0xFF141024),
-                            ),
+                            errorBuilder: (context, error, stackTrace) {
+                              if (!_customCardLoadFailed) {
+                                WidgetsBinding.instance.addPostFrameCallback((_) {
+                                  if (mounted) setState(() => _customCardLoadFailed = true);
+                                });
+                              }
+                              return const SizedBox.shrink();
+                            },
                           )
                         : Image.asset(
                             cardData.assetPath!,
-                            fit: BoxFit.fill,
+                            fit: BoxFit.fitWidth,
                             alignment: Alignment.topCenter,
-                            errorBuilder: (_, _, _) => Container(
-                              color: const Color(0xFF141024),
-                            ),
+                            errorBuilder: (context, error, stackTrace) {
+                              if (!_customCardLoadFailed) {
+                                WidgetsBinding.instance.addPostFrameCallback((_) {
+                                  if (mounted) setState(() => _customCardLoadFailed = true);
+                                });
+                              }
+                              return const SizedBox.shrink();
+                            },
                           ),
                   ),
 

@@ -49,8 +49,8 @@ class _OutfitScreenState extends State<OutfitScreen> with SingleTickerProviderSt
           } catch (_) {}
         },
         onBadgeChanged: (badge) => auth.updateEquippedBadge(badge),
-        onSkinChanged: (skin) => auth.updateProfileSkin(null),
-        onCardChanged: (card) => auth.updateProfileCard(null),
+        onSkinChanged: (skin) => auth.updateProfileSkin('none'),
+        onCardChanged: (card) => auth.updateProfileCard('none'),
       );
       if (success && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

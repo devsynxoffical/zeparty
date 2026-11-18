@@ -46,53 +46,115 @@ class ProfileCardData {
 
 /// Centralized helper for profile-card resolution and theme adaptation.
 class ProfileCardHelper {
+  /// Explicit registry mapping card IDs and asset filenames to their verified brightness theme.
+  /// True = Light background (requires dark text & dark icons)
+  /// False = Dark background (requires light text & light icons)
+  static const Map<String, bool> _explicitCardThemes = {
+    // Nobles (Empirically measured luminance 189.1 - 226.2 -> Light theme)
+    'king': true,
+    'king_card.webp': true,
+    'assets/nobles/king_card.webp': true,
+    'duke': true,
+    'tier-5-duke_profilecard.webp': true,
+    'assets/nobles/tier-5-duke_profilecard.webp': true,
+    'emperor': true,
+    'tier-7-emperor_profilecard.webp': true,
+    'assets/nobles/tier-7-emperor_profilecard.webp': true,
+    'marquis': true,
+    'tier-4-marquis_profilecard.webp': true,
+    'assets/nobles/tier-4-marquis_profilecard.webp': true,
+    'viscount': true,
+    'viscount_card.webp': true,
+    'assets/nobles/viscount_card.webp': true,
+    'count': true,
+    'count_card.webp': true,
+    'assets/nobles/count_card.webp': true,
+
+    // Store Special Cards ZP-165 through ZP-170 (Luminance 141.6 - 199.9 -> Light theme)
+    'zp-165': true,
+    'zp-165_special-cards_card.webp': true,
+    'assets/store/zp-165_special-cards_card.webp': true,
+    'zp-166': true,
+    'zp-166_special-cards_card.webp': true,
+    'assets/store/zp-166_special-cards_card.webp': true,
+    'zp-167': true,
+    'zp-167_special-cards_card.webp': true,
+    'assets/store/zp-167_special-cards_card.webp': true,
+    'zp-168': true,
+    'zp-168_special-cards_card.webp': true,
+    'assets/store/zp-168_special-cards_card.webp': true,
+    'zp-169': true,
+    'zp-169_special-cards_card.webp': true,
+    'assets/store/zp-169_special-cards_card.webp': true,
+    'zp-170': true,
+    'zp-170_special-cards_card.webp': true,
+    'assets/store/zp-170_special-cards_card.webp': true,
+
+    // Known Dark Cards
+    'card_vip.jpg': false,
+    'assets/images/card_vip.jpg': false,
+    'default': false,
+    'none': false,
+  };
+
   /// Evaluates whether an equipped profile card has a light background
   /// requiring dark text and dark icons for readability.
-  static bool isLightCard(String? path) {
-    if (path == null || path.isEmpty) return false;
-    final lower = path.toLowerCase();
+  /// Uses explicit card registry, with safe fallback to dark theme (false) for unknown cards.
+  static bool isLightCard(String? pathOrId) {
+    if (pathOrId == null || pathOrId.isEmpty) return false;
+    final lower = pathOrId.toLowerCase().trim();
 
-    // 1. All Noble profile cards feature radiant light backgrounds
-    // (King, Count, Viscount, Duke, Emperor, Marquis)
-    if (lower.contains('king') ||
-        lower.contains('count') ||
-        lower.contains('viscount') ||
-        lower.contains('duke') ||
-        lower.contains('emperor') ||
-        lower.contains('marquis')) {
+    // 1. Direct match in explicit registry
+    if (_explicitCardThemes.containsKey(lower)) {
+      return _explicitCardThemes[lower]!;
+    }
+
+    // 2. Basename match in explicit registry (stripping query parameters)
+    final filename = lower.split('/').last.split('?').first;
+    if (_explicitCardThemes.containsKey(filename)) {
+      return _explicitCardThemes[filename]!;
+    }
+
+    // 3. Noble cards
+    if (filename.contains('king') ||
+        filename.contains('duke') ||
+        filename.contains('emperor') ||
+        filename.contains('marquis') ||
+        filename.contains('viscount') ||
+        filename.contains('count')) {
       return true;
     }
 
-    // 2. All SVIP profile cards in ZeParty catalog feature light pearl, cream, or lavender interiors
+    // 4. Store special cards prefix (ZP-165 to ZP-170)
+    if (filename.contains('zp-165') ||
+        filename.contains('zp-166') ||
+        filename.contains('zp-167') ||
+        filename.contains('zp-168') ||
+        filename.contains('zp-169') ||
+        filename.contains('zp-170') ||
+        filename.contains('special-cards')) {
+      return true;
+    }
+
+    // 5. SVIP cards (All SVIP 2-16 cards feature light pearl, cream, or pastel interiors)
     if (lower.contains('svip')) {
       return true;
     }
 
-    // 3. Known light keywords
-    if (lower.contains('gold') ||
-        lower.contains('white') ||
-        lower.contains('cream') ||
-        lower.contains('pearl') ||
-        lower.contains('silver') ||
-        lower.contains('platinum')) {
-      return true;
-    }
-
-    // 4. Known dark keywords
-    if (lower.contains('black') ||
-        lower.contains('dark') ||
-        lower.contains('cyber') ||
-        lower.contains('night') ||
-        lower.contains('ruby')) {
+    // 6. Explicit dark indicators
+    if (filename.contains('card_vip') ||
+        filename.contains('black') ||
+        filename.contains('dark') ||
+        filename.contains('night')) {
       return false;
     }
 
-    // Safe default for custom cards: assume light frame unless marked dark
-    return true;
+    // 7. Safe fallback for unknown custom cards: Dark theme (white text/icons)
+    return false;
   }
 
   /// Master resolver: Identifies the single authoritative profile card to render,
-  /// with safe fallback to the default card if none is equipped or unresolved.
+  /// with safe fallback to the default card if none is equipped, unequipped, or unresolved.
   static ProfileCardData resolve({
     UserModel? user,
     bool isMe = false,
@@ -108,8 +170,13 @@ class ProfileCardHelper {
       rawCard = user.profileCardUrl ?? user.equippedProfileCardId;
     }
 
+    // Explicit sentinel for unequipped / default card
+    if (rawCard == 'none' || rawCard == 'default') {
+      return ProfileCardData.defaultCard;
+    }
+
     // Step 2: Fallback to active aristocratic noble or SVIP privileges if no card explicitly equipped
-    if (rawCard == null || rawCard.isEmpty || rawCard == 'none' || rawCard == 'default') {
+    if (rawCard == null || rawCard.isEmpty) {
       if (user.hasActiveNoble && user.nobleTitle != null && user.nobleTitle!.isNotEmpty) {
         rawCard = NobleBadgeHelper.getCardAsset(user.nobleTitle);
       } else if (user.svipLevel >= 3) {
@@ -122,7 +189,7 @@ class ProfileCardHelper {
       return ProfileCardData.defaultCard;
     }
 
-    // Step 3: Resolve file path or network URL
+    // Step 2: Resolve file path or network URL
     String? assetPath;
     String? networkUrl;
 
@@ -147,7 +214,7 @@ class ProfileCardHelper {
       return ProfileCardData.defaultCard;
     }
 
-    // Step 4: Determine light/dark color adaptation
+    // Step 3: Determine light/dark color adaptation
     final isLight = isLightCard(assetPath ?? networkUrl);
 
     return ProfileCardData(
