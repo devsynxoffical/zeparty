@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../core/services/agora_rtc_service.dart';
 import '../core/services/socket_service.dart';
 import '../core/services/api_client.dart';
@@ -10,6 +11,7 @@ import '../core/repositories/room_repository.dart';
 import '../core/repositories/backend_repository.dart';
 import '../core/repositories/pk_repository.dart';
 import '../models/live_room_model.dart';
+import '../models/party_room_model.dart';
 import '../models/party_participant_model.dart';
 import '../models/party_message_model.dart';
 import '../models/user_model.dart';
@@ -49,6 +51,32 @@ class LivePartyProvider extends ChangeNotifier {
   final RoomRepository _roomRepository = RoomRepository.instance;
   final SocketService _socketService = SocketService.instance;
   final ApiClient _apiClient = ApiClient.instance;
+
+  static const String _prefGiftEffects = 'party_effects_gift_effects';
+  static const String _prefFrameEffects = 'party_effects_frame_effects';
+  static const String _prefEntryEffects = 'party_effects_entry_effects';
+  static const String _prefGiftBanner = 'party_effects_gift_banner';
+  static const String _prefRedEnvelopeBanner = 'party_effects_red_envelope_banner';
+  static const String _prefGameBanner = 'party_effects_game_banner';
+
+  LivePartyProvider() {
+    _loadEffectsSettings();
+  }
+
+  Future<void> _loadEffectsSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _giftEffectsEnabled = prefs.getBool(_prefGiftEffects) ?? true;
+      _frameEffectsEnabled = prefs.getBool(_prefFrameEffects) ?? true;
+      _entryEffectsEnabled = prefs.getBool(_prefEntryEffects) ?? true;
+      _giftBannerNotificationEnabled = prefs.getBool(_prefGiftBanner) ?? true;
+      _redEnvelopeBannerNotificationEnabled = prefs.getBool(_prefRedEnvelopeBanner) ?? true;
+      _gameBannerNotificationEnabled = prefs.getBool(_prefGameBanner) ?? true;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[LivePartyProvider] _loadEffectsSettings error: $e');
+    }
+  }
 
   // Authoritative Agora UID Mapping Stores
   final Map<int, String> _agoraUidToUserId = {};
@@ -235,6 +263,13 @@ class LivePartyProvider extends ChangeNotifier {
 
   String? _lastJoinFailureReason;
   String? get lastJoinFailureReason => _lastJoinFailureReason;
+
+  bool _autoMuteNewSpeakers = false;
+  bool get autoMuteNewSpeakers => _autoMuteNewSpeakers;
+  void setAutoMuteNewSpeakers(bool val) {
+    _autoMuteNewSpeakers = val;
+    notifyListeners();
+  }
 
   // Stream Subscriptions
   final Map<int, double> _seatVoiceLevels = {};
@@ -597,31 +632,37 @@ class LivePartyProvider extends ChangeNotifier {
 
   void toggleGiftEffects(bool value) {
     _giftEffectsEnabled = value;
+    SharedPreferences.getInstance().then((p) => p.setBool(_prefGiftEffects, value)).catchError((_) => false);
     notifyListeners();
   }
 
   void toggleFrameEffects(bool value) {
     _frameEffectsEnabled = value;
+    SharedPreferences.getInstance().then((p) => p.setBool(_prefFrameEffects, value)).catchError((_) => false);
     notifyListeners();
   }
 
   void toggleEntryEffects(bool value) {
     _entryEffectsEnabled = value;
+    SharedPreferences.getInstance().then((p) => p.setBool(_prefEntryEffects, value)).catchError((_) => false);
     notifyListeners();
   }
 
   void toggleGiftBannerNotification(bool value) {
     _giftBannerNotificationEnabled = value;
+    SharedPreferences.getInstance().then((p) => p.setBool(_prefGiftBanner, value)).catchError((_) => false);
     notifyListeners();
   }
 
   void toggleRedEnvelopeBannerNotification(bool value) {
     _redEnvelopeBannerNotificationEnabled = value;
+    SharedPreferences.getInstance().then((p) => p.setBool(_prefRedEnvelopeBanner, value)).catchError((_) => false);
     notifyListeners();
   }
 
   void toggleGameBannerNotification(bool value) {
     _gameBannerNotificationEnabled = value;
+    SharedPreferences.getInstance().then((p) => p.setBool(_prefGameBanner, value)).catchError((_) => false);
     notifyListeners();
   }
 
@@ -795,6 +836,30 @@ class LivePartyProvider extends ChangeNotifier {
       if (_activeRoom != null) {
         _activeRoom = RoomConfigManager.instance.applyOverrides(_activeRoom!);
         _lockedSeatIndices.addAll(RoomConfigManager.instance.getLockedSeats(_activeRoom!.id));
+        final currentSeats = _activeRoom?.seats;
+        if (currentSeats != null && currentSeats.isNotEmpty) {
+          for (final s in currentSeats) {
+            int? sIdx;
+            bool? isLocked;
+            if (s is PartySeatModel) {
+              sIdx = s.seatIndex;
+              isLocked = s.isLocked;
+            } else if (s is Map) {
+              final rawIdx = s['seatIndex'] ?? s['seatNumber'];
+              sIdx = (rawIdx is num) ? rawIdx.toInt() : int.tryParse(rawIdx?.toString() ?? '');
+              if (s['isLocked'] != null) {
+                isLocked = s['isLocked'] == true;
+              }
+            }
+            if (sIdx != null) {
+              if (isLocked == true) {
+                _lockedSeatIndices.add(sIdx);
+              } else if (isLocked == false) {
+                _lockedSeatIndices.remove(sIdx);
+              }
+            }
+          }
+        }
         _roomSendingTotal = RoomConfigManager.instance.getRoomSendingTotal(_activeRoom!.id);
 
         // Synchronize Daily sending total with backend rankings (Item 30 monotonic guard)
@@ -845,6 +910,14 @@ class LivePartyProvider extends ChangeNotifier {
           final sMap = Map<String, dynamic>.from(sRaw);
           final sIdx = (sMap['seatIndex'] is num) ? (sMap['seatIndex'] as num).toInt() : int.tryParse(sMap['seatIndex']?.toString() ?? '');
           if (sIdx == null) continue;
+          if (sMap['isLocked'] != null) {
+            final isLocked = sMap['isLocked'] == true;
+            if (isLocked) {
+              _lockedSeatIndices.add(sIdx);
+            } else {
+              _lockedSeatIndices.remove(sIdx);
+            }
+          }
           final occUserRaw = sMap['occupiedUser'] ?? sMap['user'];
           final occUserId = sMap['occupiedUserId']?.toString() ?? sMap['userId']?.toString() ?? (occUserRaw is Map ? occUserRaw['id']?.toString() : null);
 
@@ -1605,6 +1678,19 @@ class LivePartyProvider extends ChangeNotifier {
         final seatIndex = (rawIdx is num) ? rawIdx.toInt() : int.tryParse(rawIdx?.toString() ?? '');
         if (seatIndex == null) return;
 
+        if (data['isLocked'] != null) {
+          final isLocked = data['isLocked'] == true || data['locked'] == true;
+          if (isLocked) {
+            _lockedSeatIndices.add(seatIndex);
+          } else {
+            _lockedSeatIndices.remove(seatIndex);
+          }
+          final currentId = _activeRoom?.id ?? _initialRoomId ?? '';
+          if (currentId.isNotEmpty) {
+            RoomConfigManager.instance.setSeatLocked(currentId, seatIndex, isLocked);
+          }
+        }
+
         final userRaw = data['user'] ?? data['occupiedUser'];
         if (userRaw is Map && userRaw['id'] != null && userRaw['id'].toString().isNotEmpty) {
           final userObj = UserModel.fromJson(Map<String, dynamic>.from(userRaw));
@@ -1873,7 +1959,16 @@ class LivePartyProvider extends ChangeNotifier {
         _participants.removeWhere((p) =>
             p.user.id == leftUserId ||
             p.user.id.toLowerCase() == leftIdLower ||
-            p.user.id.toLowerCase().replaceFirst(RegExp(r'^user_'), '') == leftIdClean);
+            p.user.id.toLowerCase().replaceFirst(RegExp(r'^user_'), '') == leftIdClean ||
+            (leftUsername != null && p.user.username.isNotEmpty && p.user.username.toLowerCase() == leftUsername.toLowerCase()));
+
+        if (_activeRoom != null && _savedRoomMembers.containsKey(_activeRoom!.id)) {
+          _savedRoomMembers[_activeRoom!.id]!.removeWhere((p) =>
+              p.user.id == leftUserId ||
+              p.user.id.toLowerCase() == leftIdLower ||
+              p.user.id.toLowerCase().replaceFirst(RegExp(r'^user_'), '') == leftIdClean ||
+              (leftUsername != null && p.user.username.isNotEmpty && p.user.username.toLowerCase() == leftUsername.toLowerCase()));
+        }
 
         // Bug #13: Reconcile authoritative seats bundled on room:user_joined (e.g. host rejoin)
         // so remote devices never retain a ghost mic seat while the returning host is unseated.
@@ -2853,22 +2948,20 @@ class LivePartyProvider extends ChangeNotifier {
     // 18. Mic Seat Locked Status Stream (Item 04 & 07, Mic 7 & 8)
     _socketSeatLockedSub?.cancel();
     _socketSeatLockedSub = _socketService.onSeatLocked.listen((data) {
-      final rId = data['roomId']?.toString();
+      if (!matchesCurrentRoom(data)) return;
       final currentId = _activeRoom?.id ?? _initialRoomId ?? '';
-      if (rId == null || rId == currentId) {
-        final seatIndex = (data['seatIndex'] is num) ? (data['seatIndex'] as num).toInt() : int.tryParse(data['seatIndex']?.toString() ?? '');
-        final isLocked = data['isLocked'] == true || data['locked'] == true;
-        if (seatIndex != null) {
-          if (isLocked) {
-            _lockedSeatIndices.add(seatIndex);
-          } else {
-            _lockedSeatIndices.remove(seatIndex);
-          }
-          if (currentId.isNotEmpty) {
-            RoomConfigManager.instance.setSeatLocked(currentId, seatIndex, isLocked);
-          }
-          notifyListeners();
+      final seatIndex = (data['seatIndex'] is num) ? (data['seatIndex'] as num).toInt() : int.tryParse(data['seatIndex']?.toString() ?? '');
+      final isLocked = data['isLocked'] == true || data['locked'] == true;
+      if (seatIndex != null) {
+        if (isLocked) {
+          _lockedSeatIndices.add(seatIndex);
+        } else {
+          _lockedSeatIndices.remove(seatIndex);
         }
+        if (currentId.isNotEmpty) {
+          RoomConfigManager.instance.setSeatLocked(currentId, seatIndex, isLocked);
+        }
+        notifyListeners();
       }
     });
 
@@ -2944,19 +3037,12 @@ class LivePartyProvider extends ChangeNotifier {
       notifyListeners();
     });
 
-    // Host Presence & Grace Period Stream (Bug 06)
+    // Host Presence & Grace Period Stream (Bug 26: Party Rooms suppress reconnecting banner entirely)
     _socketRoomHostAbsentSub?.cancel();
     _socketRoomHostAbsentSub = _socketService.onRoomHostAbsent.listen((data) {
       if (!matchesCurrentRoom(data)) return;
-      // Do not show reconnect banner for intentional leave or when room remains open for members
-      final roomStaysOpen = data['roomStaysOpen'] == true;
-      final hostLeft = data['reason'] == 'HOST_AWAY' || data['reason'] == 'HOST_LEFT';
-      final isIntentional = data['isIntentional'] == true || data['intentional'] == true;
-      if (roomStaysOpen || hostLeft || isIntentional) {
-        _isHostAbsent = false;
-      } else {
-        _isHostAbsent = true;
-      }
+      // Party rooms must NEVER display the host reconnecting/absent banner
+      _isHostAbsent = false;
       notifyListeners();
     });
 
@@ -3573,19 +3659,22 @@ class LivePartyProvider extends ChangeNotifier {
         ? (previousMicStatus ?? (_isLocalSelfMuted ? MicStatus.muted : MicStatus.on))
         : MicStatus.on;
 
+    final initialMicStatus = (_autoMuteNewSpeakers && !isHostActor) ? MicStatus.muted : MicStatus.on;
+    final effectiveMicStatus = isSeatSwitch ? preservedMicStatus : initialMicStatus;
+
     if (existingIdx != -1) {
       _participants[existingIdx] = _participants[existingIdx].copyWith(
         user: actor,
         seatNumber: seatIndex,
         role: resolvedRole,
-        micStatus: preservedMicStatus,
+        micStatus: effectiveMicStatus,
       );
     } else {
       _participants.add(PartyParticipantModel(
         user: actor,
         role: resolvedRole,
         seatNumber: seatIndex,
-        micStatus: preservedMicStatus,
+        micStatus: effectiveMicStatus,
         joinedAt: DateTime.now(),
       ));
     }
@@ -3593,10 +3682,11 @@ class LivePartyProvider extends ChangeNotifier {
     // Promote Agora Role to Broadcaster if joining mic from audience; preserve mute/audio state on seat switch
     if (actor.id == _currentUser?.id) {
       if (!isSeatSwitch) {
-        _isLocalSelfMuted = false;
+        final shouldMuteAudio = (_autoMuteNewSpeakers && !isHostActor);
+        _isLocalSelfMuted = shouldMuteAudio;
         try {
           await _agoraService.switchRole(isHost: true);
-          await _agoraService.muteLocalAudio(false);
+          await _agoraService.muteLocalAudio(shouldMuteAudio);
         } catch (_) {}
       } else {
         // Ensure broadcaster role stays active without interrupting existing audio/mute preference
@@ -3685,6 +3775,14 @@ class LivePartyProvider extends ChangeNotifier {
           final sMap = Map<String, dynamic>.from(seatRaw);
           final sIdx = (sMap['seatIndex'] is num) ? (sMap['seatIndex'] as num).toInt() : int.tryParse(sMap['seatIndex']?.toString() ?? '');
           if (sIdx == null) continue;
+          if (sMap['isLocked'] != null) {
+            final isLocked = sMap['isLocked'] == true;
+            if (isLocked) {
+              _lockedSeatIndices.add(sIdx);
+            } else {
+              _lockedSeatIndices.remove(sIdx);
+            }
+          }
           final userRaw = sMap['occupiedUser'] ?? sMap['user'];
           if (userRaw == null || (userRaw is Map && (userRaw['id'] == null || userRaw['id'].toString().isEmpty))) {
             final occIdx = _participants.indexWhere((p) => p.seatNumber == sIdx);

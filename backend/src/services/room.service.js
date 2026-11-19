@@ -1278,7 +1278,9 @@ export async function leaveRoom(roomId, userId, db = prisma) {
 }
 
 export async function occupySeat(roomId, seatIndex, userId, db = prisma) {
-  const res = await roomRepository.occupySeatTx({ roomId, seatIndex, userId }, db);
+  const controls = getRoomAdvancedControls(roomId);
+  const autoMute = Boolean(controls?.autoMuteNewSpeakers);
+  const res = await roomRepository.occupySeatTx({ roomId, seatIndex, userId, autoMute }, db);
   const canonicalRoomId = res?.updatedSeat?.roomId || res?.roomId || roomId;
   if (userId && canonicalRoomId) {
     await socketEmitter.joinUserSocketsToRoom(userId, canonicalRoomId).catch(() => {});
@@ -2958,6 +2960,65 @@ export async function controlRoomLock(roomId, { isLocked = true, accessMode = 'P
   };
 }
 
+const roomAdvancedControlsMap = new Map();
+
+export function getRoomAdvancedControls(roomId) {
+  if (!roomId) return { autoMuteNewSpeakers: false, allowSeatRequests: true, ultraHdAudio: true };
+  const canonicalId = String(roomId).trim();
+  return roomAdvancedControlsMap.get(canonicalId) || {
+    autoMuteNewSpeakers: false,
+    allowSeatRequests: true,
+    ultraHdAudio: true,
+  };
+}
+
+export async function updateRoomAdvancedControls(roomId, {
+  autoMuteNewSpeakers,
+  allowSeatRequests,
+  ultraHdAudio,
+  actorUserId,
+}, db = prisma) {
+  const room = await roomRepository.findRoomById(roomId, db);
+  if (!room) {
+    const error = new Error('Room not found');
+    error.statusCode = 404;
+    error.code = 'ROOM_NOT_FOUND';
+    throw error;
+  }
+
+  // Authorization check: Room Owner or Co-Host / Admin
+  const canonicalId = String(room.id);
+  const current = getRoomAdvancedControls(canonicalId);
+  const updated = {
+    autoMuteNewSpeakers: autoMuteNewSpeakers !== undefined ? Boolean(autoMuteNewSpeakers) : current.autoMuteNewSpeakers,
+    allowSeatRequests: allowSeatRequests !== undefined ? Boolean(allowSeatRequests) : current.allowSeatRequests,
+    ultraHdAudio: ultraHdAudio !== undefined ? Boolean(ultraHdAudio) : current.ultraHdAudio,
+  };
+  roomAdvancedControlsMap.set(canonicalId, updated);
+  if (roomId !== canonicalId) {
+    roomAdvancedControlsMap.set(String(roomId).trim(), updated);
+  }
+
+  const payload = {
+    roomId: canonicalId,
+    clientRoomId: roomId,
+    ...updated,
+    timestamp: new Date().toISOString(),
+  };
+
+  try {
+    socketEmitter.emitToRoom(canonicalId, 'room:advanced_controls_updated', payload);
+    socketEmitter.emitToRoom(canonicalId, 'room:settings_updated', payload);
+    socketEmitter.emitToRoom(canonicalId, 'room:controls_updated', payload);
+    if (canonicalId !== roomId) {
+      socketEmitter.emitToRoom(roomId, 'room:advanced_controls_updated', payload);
+      socketEmitter.emitToRoom(roomId, 'room:settings_updated', payload);
+    }
+  } catch (_) {}
+
+  return { success: true, settings: updated };
+}
+
 export async function updateRoomProfile(roomId, userId, { title, coverImageUrl, coverUrl, category, roomType, backgroundImageUrl }, db = prisma) {
   let room = await roomRepository.findRoomById(roomId, db);
   if (!room) {
@@ -3502,7 +3563,8 @@ export async function validateModerationPermission(roomId, actorUserId, targetUs
     const actorMember = await db.roomMember.findUnique({
       where: { roomId_userId: { roomId: room.id, userId: actorUserId } },
     });
-    if (actorMember && (actorMember.role === 'ADMIN' || actorMember.role === 'HOST')) {
+    const roleUpper = (actorMember?.role || '').toUpperCase();
+    if (actorMember && ['ADMIN', 'HOST', 'MODERATOR', 'CO_HOST', 'ROOM_ADMIN'].includes(roleUpper)) {
       isAdmin = true;
     }
   }
@@ -4142,7 +4204,8 @@ export async function validateRoomAdminOrOwner(roomId, actorUserId, db = prisma)
         },
       },
     });
-    if (actorMember && (actorMember.role === 'ADMIN' || actorMember.role === 'HOST')) {
+    const roleUpper = (actorMember?.role || '').toUpperCase();
+    if (actorMember && ['ADMIN', 'HOST', 'MODERATOR', 'CO_HOST', 'ROOM_ADMIN'].includes(roleUpper)) {
       isAdmin = true;
     }
   }
@@ -4602,6 +4665,8 @@ export default {
   validateRoomAdminOrOwner,
   clearRoomFeed,
   adminClearRoomFeed,
+  getRoomAdvancedControls,
+  updateRoomAdvancedControls,
   createMicInvite: micInviteService.createMicInvite,
   acceptMicInvite: micInviteService.acceptMicInvite,
   declineMicInvite: micInviteService.declineMicInvite,

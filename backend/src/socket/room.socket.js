@@ -1446,11 +1446,10 @@ export async function onSocketDisconnect(io, socket, db) {
                 roomStaysOpen: true,
                 isIntentional: false,
                 reason: 'HOST_NETWORK_DISCONNECT',
-                message: 'Host connection dropped. Reconnecting...',
+                message: 'Party room remains active for all members.',
               };
               broadcastTarget.emit(SOCKET_EVENTS.ROOM_USER_LEFT, hostAwayPayload);
               broadcastTarget.emit('user_left', hostAwayPayload);
-              broadcastTarget.emit('room:host_away', hostAwayPayload);
               broadcastTarget.emit('room:host_left', hostAwayPayload);
               startHostAbsentTimer(room.id, 'AUDIO_PARTY', userId, io, { isIntentional: false });
             } else {
@@ -2803,6 +2802,48 @@ export async function onUpdateRoomDetails(io, socket, data, callback) {
   }
 }
 
+export async function onUpdateAdvancedControls(io, socket, data, callback) {
+  try {
+    const roomId = data?.roomId;
+    if (!roomId) {
+      const err = { success: false, error: { code: 'VALIDATION_ERROR', message: 'roomId is required' } };
+      if (typeof callback === 'function') return callback(err);
+      return socket.emit(SOCKET_EVENTS.ERROR, err);
+    }
+    const actorUserId = socket.user?.id || socket.userId;
+    const result = await roomService.updateRoomAdvancedControls(roomId, {
+      ...data,
+      actorUserId,
+    });
+    if (typeof callback === 'function') return callback(result);
+  } catch (err) {
+    const errorResponse = {
+      success: false,
+      error: { code: err.code || SOCKET_ERRORS.INTERNAL_ERROR, message: err.message || 'Failed to update controls' },
+    };
+    if (typeof callback === 'function') return callback(errorResponse);
+    socket.emit(SOCKET_EVENTS.ERROR, errorResponse);
+  }
+}
+
+export function onSoundboardPlay(io, socket, data, callback) {
+  try {
+    const roomId = data?.roomId;
+    if (!roomId) return;
+    const payload = {
+      roomId,
+      soundId: data.soundId || 'applause',
+      effectName: data.effectName || 'Applause',
+      senderName: data.senderName || socket.user?.profile?.displayName || socket.user?.username || 'Host',
+      senderId: socket.user?.id || socket.userId,
+      timestamp: new Date().toISOString(),
+    };
+    socketEmitter.emitToRoom(roomId, 'room:soundboard_play', payload);
+    socketEmitter.emitToRoom(roomId, 'soundboard:played', payload);
+    if (typeof callback === 'function') callback({ success: true, data: payload });
+  } catch (_) {}
+}
+
 export function registerRoomHandlers(io, socket) {
   // Issue 07: Room Lock Settings Realtime Socket Events
   socket.on(
@@ -3406,6 +3447,14 @@ export function registerRoomHandlers(io, socket) {
 
   socket.on('stage:camera_toggle', (d, cb) => onStageCameraToggle(io, socket, d, cb));
   socket.on('room:stage_camera_toggle', (d, cb) => onStageCameraToggle(io, socket, d, cb));
+  socket.on('room:camera_toggle', (d, cb) => onStageCameraToggle(io, socket, d, cb));
+  socket.on('live:camera_toggle', (d, cb) => onStageCameraToggle(io, socket, d, cb));
+
+  // Bug #21: Advanced Room Controls & Stage Soundboard Sync
+  socket.on('room:update_advanced_controls', (d, cb) => onUpdateAdvancedControls(io, socket, d, cb));
+  socket.on('room:advanced_controls', (d, cb) => onUpdateAdvancedControls(io, socket, d, cb));
+  socket.on('room:soundboard_play', (d, cb) => onSoundboardPlay(io, socket, d, cb));
+  socket.on('soundboard:play', (d, cb) => onSoundboardPlay(io, socket, d, cb));
 
   // Handle both disconnecting (before leaveAll) and disconnect (as safety fallback)
   socket.on('disconnecting', (reason) => { socket._disconnectReason = reason; return onSocketDisconnect(io, socket); });

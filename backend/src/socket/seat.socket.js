@@ -38,6 +38,29 @@ export async function onOccupySeat(io, socket, data, callback, db) {
       }
     } catch (_) {}
 
+    // Bug #21: Enforce "Allow Viewer Seat Requests" control server-side
+    const controls = roomService.getRoomAdvancedControls(canonicalRoomId);
+    if (controls && controls.allowSeatRequests === false && seatIndex > 0) {
+      const roomRec = await (db || prisma).room.findUnique({
+        where: { id: canonicalRoomId },
+        select: { creatorUserId: true },
+      });
+      if (roomRec && roomRec.creatorUserId !== userId) {
+        const isMod = await roomService.validateRoomAdminOrOwner(canonicalRoomId, userId, db).catch(() => false);
+        if (!isMod) {
+          const err = {
+            success: false,
+            error: {
+              code: 'SEAT_REQUESTS_DISABLED',
+              message: 'Audience seat requests have been disabled by the host.',
+            },
+          };
+          if (typeof callback === 'function') return callback(err);
+          return socket.emit(SOCKET_EVENTS.ERROR, err);
+        }
+      }
+    }
+
     // Delegate to authoritative room service for atomic occupancy and concurrency locking
     const result = await roomService.occupySeat(roomId, seatIndex, userId, db);
     const updatedSeat = result?.updatedSeat || result;
@@ -382,11 +405,17 @@ export function registerSeatHandlers(io, socket) {
   // Issue 04: Mic Seat Locking Socket Events
   socket.on(
     'room:lock_seat',
-    withRateLimit('SEAT_ACTION', 25, 1000, (s, d, cb) => onLockSeat(io, s, { ...d, isLocked: true }, cb))
+    withRateLimit('SEAT_ACTION', 25, 1000, (s, d, cb) => {
+      const isLocked = d?.isLocked !== undefined ? Boolean(d.isLocked) : true;
+      return onLockSeat(io, s, { ...d, isLocked }, cb);
+    })
   );
   socket.on(
     'room_lock_seat',
-    withRateLimit('SEAT_ACTION', 25, 1000, (s, d, cb) => onLockSeat(io, s, { ...d, isLocked: true }, cb))
+    withRateLimit('SEAT_ACTION', 25, 1000, (s, d, cb) => {
+      const isLocked = d?.isLocked !== undefined ? Boolean(d.isLocked) : true;
+      return onLockSeat(io, s, { ...d, isLocked }, cb);
+    })
   );
   socket.on(
     'room:unlock_seat',

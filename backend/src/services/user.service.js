@@ -482,7 +482,7 @@ export function resolveActiveRoleTagsAndBadges(user, activeNoble = null) {
   };
 }
 
-const EQUIPPED_MEDALS_POLICY_PREFIX = 'user_equipped_medals_';
+const EQUIPPED_MEDALS_POLICY_PREFIX = 'USER_EQUIPPED_MEDALS_';
 
 function resolveSvipMedalAsset(svipLevel) {
   const lvl = Math.min(16, Math.max(1, Number(svipLevel) || 1));
@@ -682,18 +682,24 @@ async function readExplicitMedalSelection(userId, db = prisma) {
     const rec = await db.policyConfiguration.findUnique({
       where: { key: `${EQUIPPED_MEDALS_POLICY_PREFIX}${userId}` },
     });
-    if (rec && rec.value && typeof rec.value === 'object') {
+    const raw = rec?.valueJson ?? rec?.value;
+    if (raw != null) {
+      const medalIds = Array.isArray(raw)
+        ? raw.map(String)
+        : (Array.isArray(raw.medalIds)
+            ? raw.medalIds.map(String)
+            : (Array.isArray(raw.medals) ? raw.medals.map(String) : []));
       return {
         hasExplicitSelection: true,
-        medalIds: Array.isArray(rec.value.medalIds) ? rec.value.medalIds.map(String) : [],
-        updatedAt: rec.value.updatedAt || null,
+        medalIds,
+        updatedAt: (raw && typeof raw === 'object' && !Array.isArray(raw)) ? (raw.updatedAt || null) : null,
       };
     }
   } catch (_) {}
   return null;
 }
 
-export async function getUserEquippedMedals(userId, db = prisma) {
+export async function getUserMedalState(userId, db = prisma) {
   const user = await userRepository.findPublicProfileById(userId, db).catch(() => null);
   if (!user) {
     const error = new Error('User not found');
@@ -719,25 +725,22 @@ export async function updateUserEquippedMedals(userId, medalIds, db = prisma) {
     ? Array.from(new Set(medalIds.map((id) => String(id).trim()).filter(Boolean))).slice(0, 20)
     : [];
 
-  const payload = {
-    medalIds: normalizedIds,
-    updatedAt: new Date().toISOString(),
-  };
-
   if (db?.policyConfiguration?.upsert) {
     await db.policyConfiguration.upsert({
       where: { key: `${EQUIPPED_MEDALS_POLICY_PREFIX}${userId}` },
       create: {
         key: `${EQUIPPED_MEDALS_POLICY_PREFIX}${userId}`,
-        value: payload,
+        valueJson: normalizedIds,
+        status: 'ACTIVE',
       },
       update: {
-        value: payload,
+        valueJson: normalizedIds,
+        status: 'ACTIVE',
       },
     });
   }
 
-  return getUserEquippedMedals(userId, db);
+  return getUserMedalState(userId, db);
 }
 
 export async function getSelfProfile(userId, db = prisma) {
@@ -1068,6 +1071,8 @@ export async function getSelfProfile(userId, db = prisma) {
     equippedRide,
     equippedTheme,
     customTitles,
+    equippedMedalIds: await getUserEquippedMedals(userId, db),
+    equippedMedals: await getUserEquippedMedals(userId, db),
     equippedAssets: equippedUserAssets.map((ua) => ({
       id: ua.id,
       assetId: ua.assetId,
@@ -1429,6 +1434,8 @@ export async function getPublicProfile(userId, db = prisma) {
     equippedRide,
     equippedTheme,
     customTitles,
+    equippedMedalIds: await getUserEquippedMedals(userId, db),
+    equippedMedals: await getUserEquippedMedals(userId, db),
     isHost,
     hostApplicationStatus: hostAppStatus,
     presenceStatus: presence.presenceStatus,
@@ -5011,6 +5018,64 @@ export async function getUserPresence(userId, db = prisma) {
   return await presenceService.getUserPresence(userId, db);
 }
 
+/**
+ * Shared authoritative equipped-medals lookup (Bug 15)
+ */
+export async function getUserEquippedMedals(userId, db = prisma) {
+  if (!userId) return [];
+  try {
+    const record = await db.policyConfiguration.findUnique({
+      where: { key: `USER_EQUIPPED_MEDALS_${userId}` },
+    });
+    if (record && record.valueJson) {
+      const list = Array.isArray(record.valueJson)
+        ? record.valueJson
+        : (Array.isArray(record.valueJson.medals) ? record.valueJson.medals : []);
+      if (list.length > 0) return list;
+    }
+  } catch (_) {}
+
+  // Fallback / Authoritative default if not explicitly set:
+  const defaultMedals = [];
+  try {
+    const user = await db.user.findUnique({
+      where: { id: userId },
+      include: { profile: true },
+    });
+    if (user) {
+      const nobleTitle = (user.profile?.nobleRank || '').toLowerCase().trim();
+      if (nobleTitle.includes('king')) defaultMedals.push('noble_king');
+      else if (nobleTitle.includes('emperor') || nobleTitle.includes('imperial')) defaultMedals.push('noble_emperor');
+      else if (nobleTitle.includes('duke')) defaultMedals.push('noble_duke');
+      else if (nobleTitle.includes('marquis')) defaultMedals.push('noble_marquis');
+      else if (nobleTitle.includes('count') || nobleTitle.includes('earl')) defaultMedals.push('noble_count');
+      else if (nobleTitle.includes('viscount')) defaultMedals.push('noble_viscount');
+      else if (nobleTitle.includes('baron') || nobleTitle.includes('knight')) defaultMedals.push('noble_baron');
+
+      const svipLvl = Number(user.profile?.svipLevel || 0);
+      if (svipLvl > 0) {
+        defaultMedals.push('prestige_svip');
+      }
+    }
+  } catch (_) {}
+
+  return defaultMedals;
+}
+
+/**
+ * Shared authoritative equipped-medals save (Bug 15)
+ */
+export async function setUserEquippedMedals(userId, medalIds, db = prisma) {
+  if (!userId) throw new Error('User ID is required');
+  const validIds = Array.isArray(medalIds) ? medalIds.map(String).slice(0, 10) : [];
+  await db.policyConfiguration.upsert({
+    where: { key: `USER_EQUIPPED_MEDALS_${userId}` },
+    update: { valueJson: validIds, status: 'ACTIVE' },
+    create: { key: `USER_EQUIPPED_MEDALS_${userId}`, valueJson: validIds, status: 'ACTIVE' },
+  });
+  return validIds;
+}
+
 export default {
   getUserPresence,
   listUsersForAdmin,
@@ -5026,6 +5091,7 @@ export default {
   updateSelfProfile,
   getPublicProfile,
   resolveAuthoritativeMedals,
+  getUserMedalState,
   getUserEquippedMedals,
   updateUserEquippedMedals,
   searchUsers,
@@ -5081,6 +5147,8 @@ export default {
   getUserSvipStatus,
   reconcileUserWealthXP,
   resolveActiveRoleTagsAndBadges,
+  getUserEquippedMedals,
+  setUserEquippedMedals,
 };
 
 

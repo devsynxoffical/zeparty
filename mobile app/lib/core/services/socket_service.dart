@@ -1762,7 +1762,11 @@ class SocketService {
       'isLocked': isLocked,
       'timestamp': DateTime.now().toIso8601String(),
     };
-    emit('room:lock_seat', payload);
+    if (isLocked) {
+      emit('room:lock_seat', payload);
+    } else {
+      emit('room:unlock_seat', payload);
+    }
     emit('room:seat_locked_status', payload);
   }
 
@@ -1885,6 +1889,28 @@ class SocketService {
     if (_socket != null && _isConnected) {
       _socket!.emit(event, data);
     }
+  }
+
+  void on(String event, dynamic Function(dynamic) handler) {
+    _socket?.on(event, handler);
+  }
+
+  void off(String event, [dynamic Function(dynamic)? handler]) {
+    _socket?.off(event, handler);
+  }
+
+  Stream<dynamic> onEvent(String event) {
+    late StreamController<dynamic> controller;
+    void handler(dynamic data) {
+      if (!controller.isClosed) {
+        controller.add(data);
+      }
+    }
+    controller = StreamController<dynamic>.broadcast(
+      onListen: () => _socket?.on(event, handler),
+      onCancel: () => _socket?.off(event, handler),
+    );
+    return controller.stream;
   }
 
   /// ── Lucky Wheel Sockets (Issue 05) ─────────────────────────────────────────

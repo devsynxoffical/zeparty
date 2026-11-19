@@ -1223,7 +1223,7 @@ export async function leaveRoomTx({ roomId, userId }, db = prisma) {
   };
 }
 
-export async function occupySeatTx({ roomId, seatIndex, userId }, db = prisma) {
+export async function occupySeatTx({ roomId, seatIndex, userId, autoMute = false }, db = prisma) {
   return await db.$transaction(async (tx) => {
     let resolvedRoomId = roomId;
     let room = await tx.room.findUnique({
@@ -1358,7 +1358,9 @@ export async function occupySeatTx({ roomId, seatIndex, userId }, db = prisma) {
       },
       data: {
         occupiedUserId: userId,
-        isMuted: isModerationMuted ? true : preservedMuteState,
+        isMuted: isModerationMuted
+          ? true
+          : (autoMute && room.creatorUserId !== userId ? true : preservedMuteState),
         ...(isModerationMuted ? { isMutedByModerator: true } : {}),
       },
     });

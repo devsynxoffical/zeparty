@@ -44,9 +44,15 @@ class AgoraRtcService {
   final _volumeIndicationController =
       StreamController<List<AudioVolumeInfo>>.broadcast();
   final Set<int> _remoteUids = <int>{};
+  final Set<int> _videoMutedRemoteUids = <int>{};
+  final _remoteUserVideoMutedController = StreamController<Map<String, dynamic>>.broadcast();
+  bool _isFrontCamera = true;
 
   Stream<int> get activeSpeakerStream => _activeSpeakerController.stream;
   Stream<Set<int>> get remoteUsersStream => _remoteUsersController.stream;
+  Stream<Map<String, dynamic>> get remoteUserVideoMutedStream => _remoteUserVideoMutedController.stream;
+  bool isRemoteVideoMuted(int uid) => _videoMutedRemoteUids.contains(uid);
+  bool get isFrontCamera => _isFrontCamera;
   Stream<int> get firstRemoteVideoFrameStream =>
       _firstRemoteVideoFrameController.stream;
   Stream<AudioMixingStateChange> get audioMixingStateStream =>
@@ -151,9 +157,19 @@ class AgoraRtcService {
                   // Remote opponent host left PK channel
                 } else {
                   _remoteUids.remove(remoteUid);
+                  _videoMutedRemoteUids.remove(remoteUid);
                   _remoteUsersController.add(Set.from(_remoteUids));
                 }
               },
+          onUserMuteVideo: (RtcConnection connection, int remoteUid, bool muted) {
+            debugPrint('[AgoraRtcService] onUserMuteVideo remoteUid: $remoteUid, muted: $muted');
+            if (muted) {
+              _videoMutedRemoteUids.add(remoteUid);
+            } else {
+              _videoMutedRemoteUids.remove(remoteUid);
+            }
+            _remoteUserVideoMutedController.add({'uid': remoteUid, 'muted': muted});
+          },
           onFirstRemoteVideoFrame:
               (
                 RtcConnection connection,
@@ -246,13 +262,17 @@ class AgoraRtcService {
     } catch (_) {}
   }
 
-  Future<void> switchCamera() async {
+  Future<bool> switchCamera() async {
     try {
       if (_engine != null) {
         await _engine!.switchCamera();
+        _isFrontCamera = !_isFrontCamera;
+        return true;
       }
+      return false;
     } catch (e) {
       debugPrint('[AgoraRtcService] switchCamera error: $e');
+      return false;
     }
   }
 
@@ -298,6 +318,7 @@ class AgoraRtcService {
           autoSubscribeVideo: isVideo,
           publishCameraTrack: isHost && isVideo,
           publishMicrophoneTrack: isHost,
+          publishMixedAudioTrack: true,
           clientRoleType: isHost
               ? ClientRoleType.clientRoleBroadcaster
               : ClientRoleType.clientRoleAudience,
@@ -313,6 +334,10 @@ class AgoraRtcService {
   Future<void> switchRole({required bool isHost, bool isVideo = false}) async {
     _lastBroadcasterRole = isHost;
     try {
+      if (isHost && isVideo) {
+        await _setupVideo();
+        await _engine?.startPreview();
+      }
       await _engine?.setClientRole(
         role: isHost
             ? ClientRoleType.clientRoleBroadcaster
@@ -326,6 +351,7 @@ class AgoraRtcService {
         ChannelMediaOptions(
           publishCameraTrack: isHost && isVideo,
           publishMicrophoneTrack: isHost,
+          publishMixedAudioTrack: true,
           clientRoleType: isHost
               ? ClientRoleType.clientRoleBroadcaster
               : ClientRoleType.clientRoleAudience,
@@ -406,21 +432,44 @@ class AgoraRtcService {
   Future<void> muteLocalAudio(bool muted) async {
     _lastMutedAudio = muted;
     try {
-      if (!muted) {
-        // Bug #14: Recover local microphone publishing on the FIRST unmute toggle
-        // without disturbing remote speaker playback state.
-        await _engine?.enableLocalAudio(true);
+      if (_isAudioMixing) {
+        // Bug #24 + Bug #14: Mute/unmute microphone cleanly while preserving background music broadcast!
+        if (!muted) {
+          await _engine?.enableLocalAudio(true);
+        }
+        await _engine?.muteRecordingSignal(muted);
         await _engine?.updateChannelMediaOptions(
-          const ChannelMediaOptions(
-            publishMicrophoneTrack: true,
+          ChannelMediaOptions(
+            publishMicrophoneTrack: !muted,
+            publishMixedAudioTrack: true,
             clientRoleType: ClientRoleType.clientRoleBroadcaster,
           ),
         );
-        await _engine?.muteLocalAudioStream(false);
-        await _engine?.adjustRecordingSignalVolume(100);
+        await _engine?.adjustRecordingSignalVolume(muted ? 0 : 100);
       } else {
-        await _engine?.muteLocalAudioStream(true);
-        await _engine?.adjustRecordingSignalVolume(0);
+        if (!muted) {
+          // Bug #14: Recover local microphone publishing on the FIRST unmute toggle
+          // without disturbing remote speaker playback state.
+          await _engine?.enableLocalAudio(true);
+          await _engine?.muteRecordingSignal(false);
+          await _engine?.updateChannelMediaOptions(
+            const ChannelMediaOptions(
+              publishMicrophoneTrack: true,
+              clientRoleType: ClientRoleType.clientRoleBroadcaster,
+            ),
+          );
+          await _engine?.muteLocalAudioStream(false);
+          await _engine?.adjustRecordingSignalVolume(100);
+        } else {
+          await _engine?.muteRecordingSignal(true);
+          await _engine?.muteLocalAudioStream(true);
+          await _engine?.updateChannelMediaOptions(
+            const ChannelMediaOptions(
+              publishMicrophoneTrack: false,
+            ),
+          );
+          await _engine?.adjustRecordingSignalVolume(0);
+        }
       }
     } catch (e) {
       debugPrint('[AgoraRtcService] muteLocalAudio error: $e');
@@ -430,10 +479,46 @@ class AgoraRtcService {
   Future<void> muteLocalVideo(bool muted) async {
     try {
       await _engine?.muteLocalVideoStream(muted);
+      await _engine?.updateChannelMediaOptions(
+        ChannelMediaOptions(
+          publishCameraTrack: !muted,
+        ),
+      );
+      if (muted) {
+        await _engine?.stopPreview();
+      } else {
+        await _setupVideo();
+        await _engine?.startPreview();
+      }
     } catch (_) {}
   }
 
-  // ── Audio Mixing (NEW-033) ──
+  // ── Bug #21: Ultra HD Audio Engine Mode ──
+  bool _isUltraHdAudio = true;
+  bool get isUltraHdAudio => _isUltraHdAudio;
+
+  Future<void> setUltraHdAudio(bool enabled) async {
+    _isUltraHdAudio = enabled;
+    if (_engine == null) return;
+    try {
+      if (enabled) {
+        await _engine!.setAudioProfile(
+          profile: AudioProfileType.audioProfileMusicHighQualityStereo,
+          scenario: AudioScenarioType.audioScenarioGameStreaming,
+        );
+      } else {
+        await _engine!.setAudioProfile(
+          profile: AudioProfileType.audioProfileMusicStandard,
+          scenario: AudioScenarioType.audioScenarioDefault,
+        );
+      }
+      debugPrint('[AgoraRtcService] Ultra HD Audio Engine set to: $enabled');
+    } catch (e) {
+      debugPrint('[AgoraRtcService] setUltraHdAudio error: $e');
+    }
+  }
+
+  // ── Audio Mixing (Bug #24: Room Music Broadcasting) ──
   bool _isAudioMixing = false;
   bool _isAudioMixingPaused = false;
   double _audioMixingVolume = 0.8;
@@ -451,9 +536,20 @@ class AgoraRtcService {
   }) async {
     if (_engine == null) return false;
     try {
+      // Ensure client is in broadcaster role and publishing mixed audio to the RTC channel
+      await _engine!.setClientRole(role: ClientRoleType.clientRoleBroadcaster);
+      await _engine!.updateChannelMediaOptions(
+        ChannelMediaOptions(
+          publishMixedAudioTrack: true,
+          publishMicrophoneTrack: !(_lastMutedAudio ?? false),
+          clientRoleType: ClientRoleType.clientRoleBroadcaster,
+        ),
+      );
+
+      // loopback: false ensures the audio stream is published to all remote participants!
       await _engine!.startAudioMixing(
         filePath: filePath,
-        loopback: loopback,
+        loopback: false,
         cycle: cycle,
         startPos: startPos,
       );

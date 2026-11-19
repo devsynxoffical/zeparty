@@ -1,4 +1,5 @@
 import gameService from '../services/game.service.js';
+import rocketService from '../services/rocket.service.js';
 
 class GameController {
   /**
@@ -55,11 +56,37 @@ class GameController {
    */
   async getRocketProgress(req, res, next) {
     try {
+      const roomId = req.query?.roomId || req.params?.roomId;
+      if (roomId) {
+        const progress = rocketService.getRoomRocketProgress(roomId);
+        return res.status(200).json({
+          success: true,
+          message: 'Room rocket game progress retrieved',
+          data: progress,
+        });
+      }
       const userId = req.auth?.userId || req.user?.id || 'guest_user';
       const progress = await gameService.getRocketProgress(userId);
       return res.status(200).json({
         success: true,
         message: 'Rocket game 5-level targets & progress retrieved',
+        data: progress,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * Module 01: GET /v1/games/rocket/room/:roomId
+   */
+  async getRoomRocketProgress(req, res, next) {
+    try {
+      const { roomId } = req.params;
+      const progress = rocketService.getRoomRocketProgress(roomId);
+      return res.status(200).json({
+        success: true,
+        message: 'Room rocket progress retrieved',
         data: progress,
       });
     } catch (err) {

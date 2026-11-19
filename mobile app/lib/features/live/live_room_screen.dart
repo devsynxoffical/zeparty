@@ -88,9 +88,14 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
   StreamSubscription? _coHostInviteSub;
   StreamSubscription? _coHostResponseSub;
   StreamSubscription? _stageUpdatedSub;
+  StreamSubscription? _cameraStateSub;
+  StreamSubscription? _remoteVideoMutedSub;
   int _stageVersion = 0;
   bool _isEndedDialogShown = false;
   bool _isCoHostInviteDialogShown = false;
+  bool _isLocalCameraOn = true;
+  bool _isRemoteHostCameraOn = true;
+  bool _isRemoteCoHostCameraOn = true;
 
   late AnimationController _vsPulseController;
   late Animation<double> _vsScale;
@@ -511,8 +516,85 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
     );
   }
 
-  void _switchCamera() {
-    AgoraRtcService().switchCamera();
+  Future<void> _switchCamera() async {
+    final myUser = Provider.of<AuthProvider>(context, listen: false).currentUser;
+    final isHost = widget.room.host.id == myUser.id;
+    final isMeCoHost = _coHostUser != null && (_coHostUser!.id == myUser.id || _coHostUser!.username == myUser.username);
+    if (!isHost && !isMeCoHost) return;
+
+    if (!_isLocalCameraOn) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('📷 Camera is currently OFF. Turn camera ON to flip.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    final success = await AgoraRtcService.instance.switchCamera();
+    if (!success && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('⚠️ Camera switch not supported or unavailable.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  Future<void> _toggleCamera() async {
+    final myUser = Provider.of<AuthProvider>(context, listen: false).currentUser;
+    final isHost = widget.room.host.id == myUser.id;
+    final isMeCoHost = _coHostUser != null && (_coHostUser!.id == myUser.id || _coHostUser!.username == myUser.username);
+    if (!isHost && !isMeCoHost) return;
+
+    if (_isLocalCameraOn) {
+      setState(() => _isLocalCameraOn = false);
+      await AgoraRtcService.instance.muteLocalVideo(true);
+      SocketService.instance.emit('room:camera_toggle', {
+        'roomId': widget.room.id,
+        'userId': myUser.id,
+        'isCameraOn': false,
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('📷 Camera turned OFF. Displaying profile avatar.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } else {
+      final camStatus = await Permission.camera.request();
+      if (!camStatus.isGranted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('⚠️ Camera permission denied. Cannot turn on camera.'),
+              backgroundColor: Colors.redAccent,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+        return;
+      }
+      setState(() => _isLocalCameraOn = true);
+      await AgoraRtcService.instance.muteLocalVideo(false);
+      SocketService.instance.emit('room:camera_toggle', {
+        'roomId': widget.room.id,
+        'userId': myUser.id,
+        'isCameraOn': true,
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('📷 Camera turned ON.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -550,6 +632,25 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
       if (mounted) {
         setState(() {
           _remoteHostUid = uid;
+        });
+      }
+    });
+
+    _remoteVideoMutedSub = AgoraRtcService.instance.remoteUserVideoMutedStream.listen((data) {
+      if (mounted) setState(() {});
+    });
+
+    _cameraStateSub = SocketService.instance.onEvent('room:broadcaster_camera_state').listen((data) {
+      if (data is Map<String, dynamic> && mounted) {
+        final userId = data['userId']?.toString();
+        final isCameraOn = data['isCameraOn'] != false;
+        setState(() {
+          if (userId == widget.room.host.id) {
+            _isRemoteHostCameraOn = isCameraOn;
+          }
+          if (_coHostUser != null && (_coHostUser!.id == userId || _coHostUser!.username == userId)) {
+            _isRemoteCoHostCameraOn = isCameraOn;
+          }
         });
       }
     });
@@ -1018,7 +1119,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
     final agora = AgoraRtcService.instance;
 
     if (isHost) {
-      if (agora.engine != null) {
+      if (_isLocalCameraOn && agora.engine != null) {
         agora.startPreview();
         return AgoraVideoView(
           controller: VideoViewController(
@@ -1032,7 +1133,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
       final targetUid =
           _remoteHostUid ??
           (agora.remoteUids.isNotEmpty ? agora.remoteUids.first : null);
-      if (agora.engine != null && targetUid != null) {
+      if (_isRemoteHostCameraOn && targetUid != null && !agora.isRemoteVideoMuted(targetUid) && agora.engine != null) {
         return AgoraVideoView(
           controller: VideoViewController.remote(
             rtcEngine: agora.engine!,
@@ -1072,9 +1173,28 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
         (_coHostUser!.id == myUser.id ||
             _coHostUser!.username == myUser.username);
 
+    final coHostRemoteUid = isMeCoHost
+        ? null
+        : (isHost
+            ? firstRemoteUid
+            : (remoteUids.length > 1
+                ? remoteUids.firstWhere(
+                    (uid) => uid != firstRemoteUid,
+                    orElse: () => remoteUids[1],
+                  )
+                : null));
+
+    final isHostVideoActive = isHost
+        ? _isLocalCameraOn
+        : (_isRemoteHostCameraOn && firstRemoteUid != null && !agora.isRemoteVideoMuted(firstRemoteUid));
+
+    final isCoHostVideoActive = isMeCoHost
+        ? _isLocalCameraOn
+        : (_isRemoteCoHostCameraOn && coHostRemoteUid != null && !agora.isRemoteVideoMuted(coHostRemoteUid));
+
     if (isHost) {
       // Room Host: Left is host local preview (uid: 0), Right is remote Co-Host
-      videoWidgetLeft = agora.engine != null
+      videoWidgetLeft = (isHostVideoActive && agora.engine != null)
           ? AgoraVideoView(
               controller: VideoViewController(
                 rtcEngine: agora.engine!,
@@ -1082,7 +1202,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
               ),
             )
           : null;
-      videoWidgetRight = firstRemoteUid != null && agora.engine != null
+      videoWidgetRight = (isCoHostVideoActive && firstRemoteUid != null && agora.engine != null)
           ? AgoraVideoView(
               controller: VideoViewController.remote(
                 rtcEngine: agora.engine!,
@@ -1095,7 +1215,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
           : null;
     } else if (isMeCoHost) {
       // Current user is Co-Host: Left is remote Room Host, Right is co-host local preview (uid: 0)
-      videoWidgetLeft = firstRemoteUid != null && agora.engine != null
+      videoWidgetLeft = (isHostVideoActive && firstRemoteUid != null && agora.engine != null)
           ? AgoraVideoView(
               controller: VideoViewController.remote(
                 rtcEngine: agora.engine!,
@@ -1106,7 +1226,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
               ),
             )
           : null;
-      videoWidgetRight = agora.engine != null
+      videoWidgetRight = (isCoHostVideoActive && agora.engine != null)
           ? AgoraVideoView(
               controller: VideoViewController(
                 rtcEngine: agora.engine!,
@@ -1116,7 +1236,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
           : null;
     } else {
       // Audience Viewer: Left is remote Room Host, Right is remote Co-Host
-      videoWidgetLeft = firstRemoteUid != null && agora.engine != null
+      videoWidgetLeft = (isHostVideoActive && firstRemoteUid != null && agora.engine != null)
           ? AgoraVideoView(
               controller: VideoViewController.remote(
                 rtcEngine: agora.engine!,
@@ -1128,14 +1248,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
             )
           : null;
 
-      final coHostRemoteUid = remoteUids.length > 1
-          ? remoteUids.firstWhere(
-              (uid) => uid != firstRemoteUid,
-              orElse: () => remoteUids[1],
-            )
-          : null;
-
-      videoWidgetRight = coHostRemoteUid != null && agora.engine != null
+      videoWidgetRight = (isCoHostVideoActive && coHostRemoteUid != null && agora.engine != null)
           ? AgoraVideoView(
               controller: VideoViewController.remote(
                 rtcEngine: agora.engine!,
@@ -1259,12 +1372,39 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
                               child:
                                   videoWidgetLeft ??
                                   Container(
-                                    color: Colors.black45,
+                                    decoration: const BoxDecoration(
+                                      gradient: LinearGradient(
+                                        colors: [Color(0xFF1E1035), Color(0xFF0F0B1E)],
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                      ),
+                                    ),
                                     child: Center(
-                                      child: UserAvatar(
-                                        imageUrl: activeRoom.host.avatarUrl,
-                                        name: activeRoom.host.name,
-                                        radius: 28,
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          UserAvatar(
+                                            imageUrl: activeRoom.host.avatarUrl,
+                                            name: activeRoom.host.name,
+                                            radius: 32,
+                                          ),
+                                          const SizedBox(height: 6),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: Colors.black54,
+                                              borderRadius: BorderRadius.circular(8),
+                                            ),
+                                            child: const Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(Icons.videocam_off_rounded, color: Colors.white70, size: 11),
+                                                SizedBox(width: 3),
+                                                Text('Camera Off', style: TextStyle(color: Colors.white70, fontSize: 9)),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ),
@@ -1306,12 +1446,39 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
                               child:
                                   videoWidgetRight ??
                                   Container(
-                                    color: Colors.black45,
+                                    decoration: const BoxDecoration(
+                                      gradient: LinearGradient(
+                                        colors: [Color(0xFF0D1B2A), Color(0xFF050C1A)],
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                      ),
+                                    ),
                                     child: Center(
-                                      child: UserAvatar(
-                                        imageUrl: _coHostUser?.avatarUrl ?? '',
-                                        name: _coHostUser?.name ?? 'Co-Host',
-                                        radius: 28,
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          UserAvatar(
+                                            imageUrl: _coHostUser?.avatarUrl ?? '',
+                                            name: _coHostUser?.name ?? 'Co-Host',
+                                            radius: 32,
+                                          ),
+                                          const SizedBox(height: 6),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: Colors.black54,
+                                              borderRadius: BorderRadius.circular(8),
+                                            ),
+                                            child: const Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(Icons.videocam_off_rounded, color: Colors.white70, size: 11),
+                                                SizedBox(width: 3),
+                                                Text('Camera Off', style: TextStyle(color: Colors.white70, fontSize: 9)),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ),
@@ -2341,6 +2508,8 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
     _socketLikeSub?.cancel();
     _remoteUsersSub?.cancel();
     _firstFrameSub?.cancel();
+    _cameraStateSub?.cancel();
+    _remoteVideoMutedSub?.cancel();
     _kickedSub?.cancel();
     _pkInviteSub?.cancel();
     _pkStartedSub?.cancel();
@@ -3269,18 +3438,27 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
                                     ),
                                   ),
 
-                                // Switch Camera
-                                Padding(
-                                  padding: const EdgeInsets.only(right: 8),
-                                  child: GestureDetector(
-                                    onTap: _switchCamera,
-                                    child: const Icon(
-                                      Icons.cameraswitch_rounded,
-                                      color: Colors.white,
-                                      size: 20,
+                                // Switch Camera (Broadcasters only: Host & Co-Host)
+                                if (widget.room.host.id ==
+                                        context.read<AuthProvider>().currentUser.id ||
+                                    (_coHostUser != null &&
+                                        (_coHostUser!.id ==
+                                                context.read<AuthProvider>().currentUser.id ||
+                                            _coHostUser!.username ==
+                                                context.read<AuthProvider>().currentUser.username)))
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 8),
+                                    child: GestureDetector(
+                                      onTap: _switchCamera,
+                                      child: Icon(
+                                        Icons.cameraswitch_rounded,
+                                        color: _isLocalCameraOn
+                                            ? Colors.white
+                                            : Colors.white38,
+                                        size: 20,
+                                      ),
                                     ),
                                   ),
-                                ),
 
                                 // Minimize to Floating Overlay
                                 Padding(
@@ -3858,6 +4036,71 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
                             ),
                           ),
                           const SizedBox(width: 6),
+
+                          // Dedicated Camera Toggle for Broadcasters (Host & Co-Host)
+                          if (widget.room.host.id ==
+                                  context.read<AuthProvider>().currentUser.id ||
+                              (_coHostUser != null &&
+                                  (_coHostUser!.id ==
+                                          context.read<AuthProvider>().currentUser.id ||
+                                      _coHostUser!.username ==
+                                          context.read<AuthProvider>().currentUser.username))) ...[
+                            GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: _toggleCamera,
+                              child: Container(
+                                width: 36,
+                                height: 36,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  gradient: RadialGradient(
+                                    center: const Alignment(-0.3, -0.4),
+                                    radius: 0.9,
+                                    colors: !_isLocalCameraOn
+                                        ? [
+                                            const Color(0xFFFF8A80),
+                                            const Color(0xFFFF1744),
+                                            const Color(0xFFD50000),
+                                            const Color(0xFF880E4F),
+                                          ]
+                                        : [
+                                            const Color(0xFF80D8FF),
+                                            const Color(0xFF00B0FF),
+                                            const Color(0xFF0091EA),
+                                            const Color(0xFF01579B),
+                                          ],
+                                  ),
+                                  border: Border.all(
+                                    color: (!_isLocalCameraOn
+                                            ? const Color(0xFFFFEBEE)
+                                            : const Color(0xFFE1F5FE))
+                                        .withValues(alpha: 0.8),
+                                    width: 1.2,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: (!_isLocalCameraOn
+                                              ? const Color(0xFFFF1744)
+                                              : const Color(0xFF00B0FF))
+                                          .withValues(alpha: 0.5),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: Center(
+                                  child: Icon(
+                                    !_isLocalCameraOn
+                                        ? Icons.videocam_off_rounded
+                                        : Icons.videocam_rounded,
+                                    color: Colors.white,
+                                    size: 19,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                          ],
 
                           // 3. 3D Heart / Like Button
                           GestureDetector(

@@ -18,6 +18,7 @@ import hostTargetService from './hostTarget.service.js';
 import wealthLevelService from './wealthLevel.service.js';
 import roomLevelService from './roomLevel.service.js';
 import roomTrophyService from './roomTrophy.service.js';
+import rocketService from './rocket.service.js';
 import { getAuthoritativeRoomSessionScore } from './roomSession.service.js';
 
 const giftIdempotencyCache = new Map();
@@ -999,6 +1000,22 @@ export async function sendGift(
             giftTxId: result.giftTransaction.id,
           });
         } catch (_) {}
+
+        // Bug #20: Authoritative Rocket Game Cumulative Points Progression & Top Sender Rewards
+        try {
+          const canonicalRoomIdForRocket = resolvedRoom?.id || roomRecord?.id || roomId;
+          await rocketService.recordGiftContribution({
+            roomId: canonicalRoomIdForRocket,
+            roomName: resolvedRoom?.title || roomRecord?.title || `${senderDisplayName}'s Party`,
+            senderUserId,
+            senderName: senderDisplayName,
+            senderAvatar: senderAvatarUrl,
+            coins: Number(totalCoins),
+            transactionId: result.giftTransaction.id,
+          }, db || prisma);
+        } catch (rErr) {
+          console.warn('[sendGift Rocket Game] Warning:', rErr?.message);
+        }
       }
 
       // 2. Audit Logging
@@ -1125,6 +1142,59 @@ export async function sendGift(
         socketEmitter.emitToUser(recipientUserId, 'inbox:message', directMsgPayload);
         socketEmitter.emitToUser(senderUserId, 'direct_message_sent', directMsgPayload);
         socketEmitter.emitToUser(senderUserId, 'message:sent', directMsgPayload);
+      }
+
+      // Bug #23: World Gift Banner Trigger (Classic/Event high-value gifts >= 7,000 / 10,000 coins)
+      if (totalCoins >= 7000n) {
+        try {
+          const canonicalRoomIdForBanner = resolvedRoom?.id || roomRecord?.id || roomId;
+          const bannerRoomTitle = resolvedRoom?.title || roomRecord?.title || `${senderDisplayName}'s Party`;
+          const worldGiftBannerPayload = {
+            type: 'world_gift_banner',
+            transactionId: result.giftTransaction.id,
+            sender: {
+              id: senderUserId,
+              username: senderUser?.username || senderDisplayName,
+              displayName: senderDisplayName,
+              avatarUrl: senderAvatarUrl,
+              vipLevel: senderUser?.profile?.vipLevel || 0,
+              svipLevel: senderUser?.profile?.svipLevel || 0,
+            },
+            senderName: senderDisplayName,
+            senderAvatar: senderAvatarUrl,
+            senderId: senderUserId,
+            recipient: {
+              id: recipientUserId,
+              username: recipientUserObj?.username || recipientDisplayName,
+              displayName: recipientDisplayName,
+              avatarUrl: recipientAvatarUrl,
+            },
+            receiverName: recipientDisplayName,
+            receiverAvatar: recipientAvatarUrl,
+            receiverId: recipientUserId,
+            gift: {
+              id: gift.id,
+              name: gift.name,
+              iconUrl: gift.iconUrl,
+              coinValue: gift.coinValue.toString(),
+            },
+            giftName: gift.name,
+            giftIcon: gift.iconUrl,
+            quantity: qty,
+            totalCoins: totalCoins.toString(),
+            amount: Number(totalCoins),
+            coinValue: Number(totalCoins),
+            roomId: canonicalRoomIdForBanner,
+            roomName: bannerRoomTitle,
+            timestamp: new Date().toISOString(),
+          };
+
+          socketEmitter.emitToAll('world:gift_banner', worldGiftBannerPayload);
+          socketEmitter.emitToAll('world:global_event', worldGiftBannerPayload);
+          socketEmitter.broadcastGlobal('world:gift_banner', worldGiftBannerPayload);
+        } catch (wbErr) {
+          console.warn('[sendGift World Banner] Warning:', wbErr?.message);
+        }
       }
 
       // High-Value Activity Announcement Trigger (100,000+ Coins)

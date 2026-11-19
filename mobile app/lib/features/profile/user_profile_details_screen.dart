@@ -281,6 +281,17 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
           liveRoomId: isLiveVal ? liveRoomIdVal : null,
           isOnline: isOnlineVal,
         );
+        final serverMedals = profileData['equippedMedalIds'] ?? profileData['equippedMedals'];
+        if (serverMedals is List && serverMedals.isNotEmpty) {
+          final sIds = serverMedals.map((e) => e.toString()).toSet();
+          if (mounted) {
+            setState(() {
+              _hasExplicitMedalSelection = true;
+              _equippedMedalIds = sIds;
+            });
+          }
+          MedalManager.saveEquippedMedalIds(user.id, sIds);
+        }
         if (isFollowing && !auth.isFollowing(user.id)) {
           auth.syncFollowingList();
         }
@@ -373,6 +384,19 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
           _hasExplicitMedalSelection = selection.hasExplicitSelection;
           _equippedMedalIds = selection.equippedIds;
         });
+      }
+
+      if (!selection.hasExplicitSelection && selection.equippedIds.isEmpty) {
+        try {
+          final serverMedals = await SocialRepository.instance.getUserEquippedMedals(targetId);
+          if (serverMedals.isNotEmpty && mounted) {
+            final sIds = serverMedals.toSet();
+            setState(() {
+              _hasExplicitMedalSelection = true;
+              _equippedMedalIds = sIds;
+            });
+          }
+        } catch (_) {}
       }
     }
   }
@@ -2610,7 +2634,24 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
       }
     }
 
-    final rawUrl = medal.iconUrl.trim();
+    String rawUrl = medal.iconUrl.trim();
+    // Map any raw SVIP / noble icon keys to full local asset path if needed (Bug #15)
+    if (!rawUrl.startsWith('assets/') && !rawUrl.startsWith('/assets/')) {
+      if (rawUrl.contains('svip-') || rawUrl.contains('svip_')) {
+        final match = RegExp(r'svip[-_](\d+)').firstMatch(rawUrl);
+        if (match != null) {
+          final lvl = int.tryParse(match.group(1) ?? '') ?? 1;
+          rawUrl = (lvl == 2 || lvl == 16)
+              ? 'assets/svip/SVIP${lvl.toString().padLeft(2, '0')}_badge_live.webp'
+              : 'assets/svip/svip-${lvl}_badge.webp';
+        }
+      } else if (rawUrl.contains('king_badge')) {
+        rawUrl = 'assets/nobles/ZP-037_tier-6-king_badge.webp';
+      } else if (rawUrl.contains('emperor_badge')) {
+        rawUrl = 'assets/nobles/emperor_badge.webp';
+      }
+    }
+
     final normalizedAsset = rawUrl.startsWith('/assets/') ? rawUrl.substring(1) : rawUrl;
     final isAsset = normalizedAsset.startsWith('assets/');
     final isNetwork = rawUrl.startsWith('http://') ||

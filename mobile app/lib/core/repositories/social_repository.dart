@@ -476,6 +476,37 @@ class SocialRepository {
     return [];
   }
 
+  /// GET /v1/users/:id/equipped-medals
+  Future<List<String>> getUserEquippedMedals(String userId) async {
+    try {
+      final response = await _client.get('/v1/users/$userId/equipped-medals');
+      if (response.data != null && response.data['data'] != null) {
+        final d = response.data['data'];
+        final list = d['equippedMedalIds'] ?? d['equippedMedals'];
+        if (list is List) {
+          return list.map((e) => e.toString()).toList();
+        }
+      }
+    } catch (e) {
+      debugPrint('[SocialRepository] getUserEquippedMedals error: $e');
+    }
+    return [];
+  }
+
+  /// POST /v1/users/me/equipped-medals
+  Future<bool> setUserEquippedMedals(List<String> medalIds) async {
+    try {
+      final response = await _client.post(
+        '/v1/users/me/equipped-medals',
+        data: {'equippedMedalIds': medalIds},
+      );
+      return response.data != null && response.data['success'] == true;
+    } catch (e) {
+      debugPrint('[SocialRepository] setUserEquippedMedals error: $e');
+      return false;
+    }
+  }
+
   /// GET /v1/social/relationship/eligible-friends
   Future<List<UserModel>> getEligibleRelationshipFriends({String search = ''}) async {
     final queryParam = search.isNotEmpty ? '?search=${Uri.encodeComponent(search)}' : '';
