@@ -216,29 +216,35 @@ class MedalModel {
     final isHost = user.isHost;
     final isSvip = user.svipLevel > 0;
 
-    // If user has not explicitly configured equipped medals, default their active noble medal as equipped
-    String? defaultEquippedId;
+    // If user has not explicitly configured equipped medals, default active noble medal AND svip medal as equipped (Bug 15)
+    final Set<String> defaultEquippedIds = {};
     if (!hasExplicitEquippedSelection && (equippedMedalIds == null || equippedMedalIds.isEmpty)) {
       if (hasValidNoble) {
         if (isKing) {
-          defaultEquippedId = 'noble_king';
+          defaultEquippedIds.add('noble_king');
         } else if (isEmperor) {
-          defaultEquippedId = 'noble_emperor';
+          defaultEquippedIds.add('noble_emperor');
         } else if (isDuke) {
-          defaultEquippedId = 'noble_duke';
+          defaultEquippedIds.add('noble_duke');
         } else if (isMarquis) {
-          defaultEquippedId = 'noble_marquis';
+          defaultEquippedIds.add('noble_marquis');
         } else if (isCount) {
-          defaultEquippedId = 'noble_count';
+          defaultEquippedIds.add('noble_count');
         } else if (isViscount) {
-          defaultEquippedId = 'noble_viscount';
+          defaultEquippedIds.add('noble_viscount');
         } else if (isBaron) {
-          defaultEquippedId = 'noble_baron';
+          defaultEquippedIds.add('noble_baron');
         }
-      } else if (isMerchant) {
-        defaultEquippedId = 'role_merchant';
-      } else if (isSeller) {
-        defaultEquippedId = 'role_seller';
+      }
+      if (isSvip) {
+        defaultEquippedIds.add('prestige_svip');
+      }
+      if (defaultEquippedIds.isEmpty) {
+        if (isMerchant) {
+          defaultEquippedIds.add('role_merchant');
+        } else if (isSeller) {
+          defaultEquippedIds.add('role_seller');
+        }
       }
     }
 
@@ -292,7 +298,7 @@ class MedalModel {
       final bool equipped = earned && (
         hasExplicitEquippedSelection || (equippedMedalIds != null && equippedMedalIds.isNotEmpty)
             ? (equippedMedalIds != null && equippedMedalIds.contains(m.id))
-            : (defaultEquippedId == m.id)
+            : defaultEquippedIds.contains(m.id)
       );
 
       return m.copyWith(

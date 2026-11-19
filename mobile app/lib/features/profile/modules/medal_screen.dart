@@ -70,6 +70,7 @@ class _MedalScreenState extends State<MedalScreen> {
 
     final equippedIds = updated.where((m) => m.isEarned && m.isEquipped).map((m) => m.id).toSet();
     await MedalManager.saveEquippedMedalIds(user.id, equippedIds);
+    SocialRepository.instance.setUserEquippedMedals(equippedIds.toList());
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

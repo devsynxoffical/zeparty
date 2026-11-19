@@ -9,6 +9,7 @@ import * as notificationService from './notification.service.js';
 import presenceService from '../socket/presence.service.js';
 import privacyEligibilityService from './privacyEligibility.service.js';
 import { getNobleStyle } from './asset.service.js';
+import { getUserEquippedMedals } from './user.service.js';
 
 /**
  * Social & Engagement Service
@@ -1014,6 +1015,8 @@ export async function getSocialProfile(targetUserId, viewerUserId = null, db = p
     }
   }
 
+  const equippedMedals = await getUserEquippedMedals(canonicalTargetId, db);
+
   return {
     id: user.id,
     username: user.username,
@@ -1035,6 +1038,8 @@ export async function getSocialProfile(targetUserId, viewerUserId = null, db = p
     nobleLevel: user.profile?.nobleRank || null,
     nobleColor: getNobleStyle(user.profile?.nobleRank)?.color || null,
     nobleStyle: getNobleStyle(user.profile?.nobleRank),
+    equippedMedalIds: equippedMedals,
+    equippedMedals,
     isPrivate,
     followersCount,
     followingCount,

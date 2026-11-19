@@ -1869,8 +1869,54 @@ export async function getMySvipStatus(req, res, next) {
   }
 }
 
+export async function getUserEquippedMedals(req, res, next) {
+  try {
+    const { id } = req.params;
+    let targetUser = await userRepository.findUserById(id).catch(() => null);
+    if (!targetUser) {
+      targetUser = await userRepository.findUserByUniqueId(id).catch(() => null);
+    }
+    const targetId = targetUser?.id || id;
+    const medals = await userService.getUserEquippedMedals(targetId);
+    return res.status(200).json({
+      success: true,
+      data: {
+        userId: targetId,
+        equippedMedalIds: medals,
+        equippedMedals: medals,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function setMyEquippedMedals(req, res, next) {
+  try {
+    const userId = req.user?.id || req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Authentication required' });
+    }
+    const medalIds = req.body?.equippedMedalIds || req.body?.medalIds || [];
+    const saved = await userService.setUserEquippedMedals(userId, medalIds);
+    return res.status(200).json({
+      success: true,
+      message: 'Equipped medals updated successfully',
+      data: {
+        userId,
+        equippedMedalIds: saved,
+        equippedMedals: saved,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   getMySvipStatus,
+  getUserEquippedMedals,
+  setMyEquippedMedals,
   getDailyCheckinStatus,
   claimDailyCheckin,
   getDailyQuests,

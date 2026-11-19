@@ -61,6 +61,9 @@ import '../live/widgets/live_viewers_sheet.dart';
 import '../../core/services/agora_rtc_service.dart';
 import '../../core/repositories/room_repository.dart';
 import '../../models/live_cohost_invitation_model.dart';
+import 'package:audioplayers/audioplayers.dart';
+import '../../widgets/world_banner_overlay.dart';
+import '../../core/services/api_client.dart';
 
 class LivePartyRoomScreen extends StatefulWidget {
   final LiveRoomModel room;
@@ -118,6 +121,21 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
   bool _autoMuteNewSpeakers = false;
   bool _allowSeatRequests = true;
   bool _hdAudioMode = true;
+
+  // Rocket Game state & Subscriptions
+  int _rocketCumulativePoints = 0;
+  int _rocketLevel = 1;
+  int _rocketTarget = 100000;
+  String _rocketDisplayFormat = '100K';
+  StreamSubscription? _rocketProgressSub;
+  StreamSubscription? _rocketUnlockSub;
+
+  // Soundboard & Advanced Controls state
+  StreamSubscription? _soundboardSub;
+  StreamSubscription? _advancedControlsSub;
+  String? _activeSoundboardBanner;
+  Timer? _soundboardBannerTimer;
+  final AudioPlayer _soundboardAudioPlayer = AudioPlayer();
 
   late final String _roomEntrySessionId;
   RoomEntryBannerItem? _currentMountBanner;
@@ -516,6 +534,122 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
         _stopMusicProgressTicker();
       }
     });
+
+    _initRocketAndControlsListeners();
+  }
+
+  void _initRocketAndControlsListeners() {
+    final socket = SocketService.instance;
+
+    _loadInitialRocketProgress();
+
+    _rocketProgressSub = socket.onEvent('room:rocket_progress').listen((data) {
+      if (data is Map<String, dynamic> && mounted) {
+        setState(() {
+          _rocketCumulativePoints = data['cumulativePoints'] is int
+              ? data['cumulativePoints']
+              : int.tryParse(data['cumulativePoints']?.toString() ?? '0') ?? _rocketCumulativePoints;
+          _rocketLevel = data['activeRocketLevel'] is int
+              ? data['activeRocketLevel']
+              : int.tryParse(data['activeRocketLevel']?.toString() ?? '1') ?? _rocketLevel;
+          _rocketTarget = data['activeTarget'] is int
+              ? data['activeTarget']
+              : int.tryParse(data['activeTarget']?.toString() ?? '100000') ?? _rocketTarget;
+          _rocketDisplayFormat = data['displayFormat']?.toString() ?? _rocketDisplayFormat;
+        });
+      }
+    });
+
+    _rocketUnlockSub = socket.onEvent('room:rocket_unlocked').listen((data) {
+      if (data is Map<String, dynamic> && mounted) {
+        final lvl = data['rocketLevel'] ?? _rocketLevel;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('🎉 ROCKET $lvl UNLOCKED! Top sender reward credited! 🚀', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+            backgroundColor: Colors.amber.shade800,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    });
+
+    _soundboardSub = socket.onEvent('room:soundboard_play').listen((data) {
+      if (data is Map<String, dynamic> && mounted) {
+        final soundId = data['soundId']?.toString() ?? 'applause';
+        final effectName = data['effectName']?.toString() ?? 'Sound Effect';
+        final senderName = data['senderName']?.toString() ?? 'Host';
+        _playSoundLocally(soundId);
+        _showSoundboardReaction(effectName, senderName);
+      }
+    });
+
+    _advancedControlsSub = socket.onEvent('room:advanced_controls_updated').listen((data) {
+      if (data is Map<String, dynamic> && mounted) {
+        setState(() {
+          if (data.containsKey('autoMuteNewSpeakers')) {
+            _autoMuteNewSpeakers = data['autoMuteNewSpeakers'] == true;
+            context.read<LivePartyProvider>().setAutoMuteNewSpeakers(_autoMuteNewSpeakers);
+          }
+          if (data.containsKey('allowSeatRequests')) {
+            _allowSeatRequests = data['allowSeatRequests'] == true;
+          }
+          if (data.containsKey('ultraHdAudio')) {
+            _hdAudioMode = data['ultraHdAudio'] == true;
+            AgoraRtcService().setUltraHdAudio(_hdAudioMode);
+          }
+        });
+      }
+    });
+  }
+
+  Future<void> _loadInitialRocketProgress() async {
+    try {
+      final res = await ApiClient.instance.dio.get('/v1/games/rocket/room/${widget.room.id}');
+      if (res.data != null && res.data['success'] == true && res.data['data'] != null && mounted) {
+        final data = res.data['data'] as Map<String, dynamic>;
+        setState(() {
+          _rocketCumulativePoints = data['cumulativePoints'] is int
+              ? data['cumulativePoints']
+              : int.tryParse(data['cumulativePoints']?.toString() ?? '0') ?? _rocketCumulativePoints;
+          _rocketLevel = data['activeRocketLevel'] is int
+              ? data['activeRocketLevel']
+              : int.tryParse(data['activeRocketLevel']?.toString() ?? '1') ?? _rocketLevel;
+          _rocketTarget = data['activeTarget'] is int
+              ? data['activeTarget']
+              : int.tryParse(data['activeTarget']?.toString() ?? '100000') ?? _rocketTarget;
+          _rocketDisplayFormat = data['displayFormat']?.toString() ?? _rocketDisplayFormat;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _playSoundLocally(String soundId) async {
+    const soundUrls = {
+      'applause': 'https://actions.google.com/sounds/v1/crowds/applause_outdoor.ogg',
+      'fanfare': 'https://actions.google.com/sounds/v1/cartoon/trumpet_fanfare.ogg',
+      'cheer': 'https://actions.google.com/sounds/v1/crowds/outdoor_cheer.ogg',
+      'laugh': 'https://actions.google.com/sounds/v1/human_voices/laughter_group.ogg',
+    };
+    final url = soundUrls[soundId];
+    if (url != null) {
+      try {
+        await _soundboardAudioPlayer.stop();
+        await _soundboardAudioPlayer.play(UrlSource(url));
+      } catch (_) {}
+    }
+  }
+
+  void _showSoundboardReaction(String effectName, String senderName) {
+    if (!mounted) return;
+    _soundboardBannerTimer?.cancel();
+    setState(() {
+      _activeSoundboardBanner = '$senderName triggered $effectName 🎉';
+    });
+    _soundboardBannerTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) {
+        setState(() => _activeSoundboardBanner = null);
+      }
+    });
   }
 
   void _startMusicProgressTicker() {
@@ -560,6 +694,12 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     _coHostInviteSub?.cancel();
     _pkInviteSub?.cancel();
     _pkResultSub?.cancel();
+    _rocketProgressSub?.cancel();
+    _rocketUnlockSub?.cancel();
+    _soundboardSub?.cancel();
+    _advancedControlsSub?.cancel();
+    _soundboardBannerTimer?.cancel();
+    _soundboardAudioPlayer.dispose();
     _audioMixingSub?.cancel();
     _stopMusicProgressTicker();
     _chatController.dispose();
@@ -1161,30 +1301,6 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                 // Top Header (Always visible)
                 _buildHeader(context, isHost, canManage, provider),
 
-                // Host Stepped Away Banner (Bug 06)
-                if (provider.isHostAbsent)
-                  Container(
-                    width: double.infinity,
-                    margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.amber.withValues(alpha: 0.18),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.amber.withValues(alpha: 0.5)),
-                    ),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.hourglass_top_rounded, color: Colors.amberAccent, size: 16),
-                        SizedBox(width: 8),
-                        Text(
-                          'Host stepped away (reconnecting...)',
-                          style: TextStyle(color: Colors.amberAccent, fontSize: 12, fontWeight: FontWeight.bold),
-                        ),
-                      ],
-                    ),
-                  ),
-
                 // Audience & Participants Avatar Bar (Shows active listeners & users in real-time)
                 _buildAudienceRow(provider, canManage, isDark),
 
@@ -1208,6 +1324,27 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                       duration: const Duration(milliseconds: 250),
                       child: Column(
                         children: [
+                          // Bug #20: Persistent In-Room Rocket Progress Strip
+                          _buildRoomRocketProgressStrip(),
+
+                          // Bug #21: Active Stage Soundboard Visual Feedback
+                          if (_activeSoundboardBanner != null)
+                            Container(
+                              margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(colors: [Colors.pinkAccent, Colors.deepPurpleAccent]),
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: [
+                                  BoxShadow(color: Colors.pinkAccent.withValues(alpha: 0.4), blurRadius: 10),
+                                ],
+                              ),
+                              child: Text(
+                                _activeSoundboardBanner!,
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                              ),
+                            ),
+
                           // Banners Strip
                           const SvipEntryBanner(),
 
@@ -1487,10 +1624,89 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                 child: WorldLuckyBagBanner(),
               ),
             ),
+
+          // Bug #20 & Bug #23: World Gift & Rocket Unlocked Announcement Overlay
+          if (!_isClearScreenMode)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 8,
+              left: 0,
+              right: 0,
+              child: WorldBannerOverlay(currentRoomId: widget.room.id),
+            ),
         ],
       ),
     ),
   );
+  }
+
+  Widget _buildRoomRocketProgressStrip() {
+    if (_rocketCumulativePoints <= 0) return const SizedBox.shrink();
+    final target = _rocketTarget;
+    final progress = (target > 0) ? (_rocketCumulativePoints / target).clamp(0.0, 1.0) : 0.0;
+    return GestureDetector(
+      onTap: () {
+        showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          builder: (_) => RocketGameSheet(roomId: widget.room.id),
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1E182B).withValues(alpha: 0.9),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFFFB800).withValues(alpha: 0.5), width: 1),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.amber.withValues(alpha: 0.15),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'ROOM ROCKET PROGRESS 🚀',
+                  style: TextStyle(
+                    color: Color(0xFFFFD56B),
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                Text(
+                  'Rocket $_rocketLevel: ${AppFormatters.formatNumber(_rocketCumulativePoints)} / ${AppFormatters.formatNumber(_rocketTarget)} points',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 5),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: progress,
+                backgroundColor: Colors.white12,
+                valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFFFB800)),
+                minHeight: 6,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildHeader(
@@ -2408,6 +2624,16 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
         final occupant = provider.participants.where((p) => p.seatNumber == index).firstOrNull;
         final authUser = context.read<AuthProvider>().currentUser;
         if (occupant == null && !provider.isSeatLocked(index)) {
+          // Bug #21: Block seat requests if host disabled viewer seat requests
+          if (!_allowSeatRequests && !provider.isHost && widget.room.creatorUserId != authUser.id) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('⚠️ The host has disabled microphone seat requests in this room.'),
+                backgroundColor: Colors.orangeAccent,
+              ),
+            );
+            return;
+          }
           final err = await provider.takeMicSeat(index, authUser);
           if (context.mounted && err != null) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -3697,15 +3923,15 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
 
 
   void _showSeatLockDialog(BuildContext context, LivePartyProvider provider) {
-    final activeRoom = RoomConfigManager.instance.applyOverrides(provider.activeRoom ?? widget.room);
-    final totalSeats = [10, 15, 20, 30].contains(activeRoom.seatCapacity) ? activeRoom.seatCapacity : 10;
-
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1E1B2E),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (lCtx) => StatefulBuilder(
-        builder: (context, setLockState) {
+      builder: (lCtx) => Consumer<LivePartyProvider>(
+        builder: (context, prov, _) {
+          final activeRoom = RoomConfigManager.instance.applyOverrides(prov.activeRoom ?? widget.room);
+          final totalSeats = [8, 10, 12, 15, 20, 30].contains(activeRoom.seatCapacity) ? activeRoom.seatCapacity : 10;
+
           return SafeArea(
             child: Padding(
               padding: const EdgeInsets.all(20),
@@ -3735,16 +3961,24 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                         mainAxisSpacing: 10,
                       ),
                       itemBuilder: (context, index) {
-                        final isLocked = provider.isSeatLocked(index);
+                        final isLocked = prov.isSeatLocked(index);
                         final isHostSeat = index == 0;
                         final isCoHostSeat = index == 1;
+                        final seatLabel = isHostSeat
+                            ? 'Host'
+                            : isCoHostSeat
+                                ? 'Co-Host'
+                                : (totalSeats == 15 && index == 2)
+                                    ? 'VIP'
+                                    : (totalSeats == 15 && index > 2)
+                                        ? 'Mic ${index - 2}'
+                                        : 'Mic ${index - 1}';
 
                         return GestureDetector(
                           onTap: isHostSeat
                               ? null
                               : () {
-                                  provider.toggleSeatLock(index);
-                                  setLockState(() {});
+                                  prov.toggleSeatLock(index);
                                 },
                           child: Container(
                             decoration: BoxDecoration(
@@ -3770,11 +4004,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  isHostSeat
-                                      ? 'Host'
-                                      : isCoHostSeat
-                                          ? 'Co-Host'
-                                          : 'Mic ${index - 1}',
+                                  seatLabel,
                                   style: TextStyle(
                                     color: isHostSeat ? Colors.amber : (isLocked ? Colors.redAccent : Colors.white70),
                                     fontSize: 10,
@@ -4963,6 +5193,8 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                       value: _autoMuteNewSpeakers,
                       onChanged: (val) {
                         setState(() => _autoMuteNewSpeakers = val);
+                        Provider.of<LivePartyProvider>(context, listen: false).setAutoMuteNewSpeakers(val);
+                        _syncAdvancedControls();
                         setSettingsState(() {});
                       },
                     ),
@@ -4973,6 +5205,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                       value: _allowSeatRequests,
                       onChanged: (val) {
                         setState(() => _allowSeatRequests = val);
+                        _syncAdvancedControls();
                         setSettingsState(() {});
                       },
                     ),
@@ -4983,6 +5216,8 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                       value: _hdAudioMode,
                       onChanged: (val) {
                         setState(() => _hdAudioMode = val);
+                        AgoraRtcService().setUltraHdAudio(val);
+                        _syncAdvancedControls();
                         setSettingsState(() {});
                       },
                     ),
@@ -4992,13 +5227,13 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                     // Responsive Soundboard Grid
                     Row(
                       children: [
-                        Expanded(child: _soundboardBtn('👏 Applause', () => _broadcastSoundEffect('clapped for the room 👏✨'))),
+                        Expanded(child: _soundboardBtn('👏 Applause', () => _triggerSoundboard('applause', 'Applause', 'clapped for the room 👏✨'))),
                         const SizedBox(width: 8),
-                        Expanded(child: _soundboardBtn('🎺 Fanfare', () => _broadcastSoundEffect('played Victory Fanfare 🎺🔥'))),
+                        Expanded(child: _soundboardBtn('🎺 Fanfare', () => _triggerSoundboard('fanfare', 'Fanfare', 'played Victory Fanfare 🎺🔥'))),
                         const SizedBox(width: 8),
-                        Expanded(child: _soundboardBtn('🎉 Cheer', () => _broadcastSoundEffect('triggered Party Cheer 🎉🥳'))),
+                        Expanded(child: _soundboardBtn('🎉 Cheer', () => _triggerSoundboard('cheer', 'Cheer', 'triggered Party Cheer 🎉🥳'))),
                         const SizedBox(width: 8),
-                        Expanded(child: _soundboardBtn('😂 Laugh', () => _broadcastSoundEffect('shared a Laugh 😂🙌'))),
+                        Expanded(child: _soundboardBtn('😂 Laugh', () => _triggerSoundboard('laugh', 'Laugh', 'shared a Laugh 😂🙌'))),
                       ],
                     ),
                   ],
@@ -5029,10 +5264,37 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     );
   }
 
-  void _broadcastSoundEffect(String actionText) {
+  void _syncAdvancedControls() {
+    SocketService.instance.emit('room:update_advanced_controls', {
+      'roomId': widget.room.id,
+      'autoMuteNewSpeakers': _autoMuteNewSpeakers,
+      'allowSeatRequests': _allowSeatRequests,
+      'ultraHdAudio': _hdAudioMode,
+    });
+  }
+
+  void _triggerSoundboard(String soundId, String name, String actionText) {
     final user = Provider.of<AuthProvider>(context, listen: false).currentUser;
     final provider = Provider.of<LivePartyProvider>(context, listen: false);
+
+    final displayName = user.displayName.isNotEmpty ? user.displayName : user.name;
+
+    // 1. Play sound locally
+    _playSoundLocally(soundId);
+
+    // 2. Broadcast room-scoped playback event so all room listeners hear it without interrupting mics
+    SocketService.instance.emit('room:soundboard_play', {
+      'roomId': widget.room.id,
+      'soundId': soundId,
+      'effectName': name,
+      'senderName': displayName,
+    });
+
+    // 3. Send in-room chat event
     provider.sendMessage(user, actionText);
+
+    // 4. Show visual banner
+    _showSoundboardReaction(name, displayName);
   }
 
   Widget _buildRoomToolBtn(
@@ -5323,18 +5585,19 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                           ],
                         ),
                         const Spacer(),
-                        TextButton.icon(
-                          onPressed: () {
-                            for (var p in provider.participants) {
-                              if (p.role != ParticipantRole.host) {
-                                provider.muteParticipant(p.user.id);
+                        if (canManage)
+                          TextButton.icon(
+                            onPressed: () {
+                              for (var p in provider.participants) {
+                                if (p.role != ParticipantRole.host) {
+                                  provider.muteParticipant(p.user.id);
+                                }
                               }
-                            }
-                            ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('All participants muted 🔇')));
-                          },
-                          icon: const Icon(Icons.volume_off_rounded, size: 16, color: Colors.orangeAccent),
-                          label: const Text('Mute All', style: TextStyle(color: Colors.orangeAccent, fontSize: 12)),
-                        ),
+                              ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('All participants muted 🔇')));
+                            },
+                            icon: const Icon(Icons.volume_off_rounded, size: 16, color: Colors.orangeAccent),
+                            label: const Text('Mute All', style: TextStyle(color: Colors.orangeAccent, fontSize: 12)),
+                          ),
                       ],
                     ),
                     const SizedBox(height: 12),
@@ -5356,6 +5619,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                           final pIsMod = p.role == ParticipantRole.moderator;
                           final pMuted = p.micStatus == MicStatus.muted;
                           final onSeat = p.seatNumber != null;
+                          final isSelf = p.user.id == authUser.id;
 
                           return ListTile(
                             contentPadding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
@@ -5393,7 +5657,29 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                if (!pIsHost) ...[
+                                // Case 1: Current user on mic seat can toggle their own mic
+                                if (isSelf && onSeat) ...[
+                                  GestureDetector(
+                                    onTap: () {
+                                      if (pMuted) {
+                                        provider.unmuteParticipant(p.user.id);
+                                      } else {
+                                        provider.muteParticipant(p.user.id);
+                                      }
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.all(6),
+                                      decoration: BoxDecoration(
+                                        color: pMuted ? Colors.red.withValues(alpha: 0.2) : Colors.green.withValues(alpha: 0.2),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(color: pMuted ? Colors.red : Colors.green, width: 1),
+                                      ),
+                                      child: Icon(pMuted ? Icons.mic_off : Icons.mic, size: 16, color: pMuted ? Colors.red : Colors.green),
+                                    ),
+                                  ),
+                                ]
+                                // Case 2: Only room host/admin/moderator can moderate other participants
+                                else if (canManage && !pIsHost && !isSelf) ...[
                                   GestureDetector(
                                     onTap: () {
                                       if (pMuted) {

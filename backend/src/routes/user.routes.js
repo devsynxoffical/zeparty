@@ -143,6 +143,9 @@ userProfileRouter.get('/:id/card', optionalAuthenticate, userController.getRoomU
 userProfileRouter.get('/:id/level-strip', optionalAuthenticate, userController.getUserLevelStrip);
 userProfileRouter.get('/:id/received-gifts', optionalAuthenticate, userController.getUserReceivedGifts);
 userProfileRouter.get('/:id/honor-assets', optionalAuthenticate, userController.getUserHonorAssets);
+userProfileRouter.get('/:id/equipped-medals', optionalAuthenticate, userController.getUserEquippedMedals);
+userProfileRouter.post('/me/equipped-medals', authenticate, userController.setMyEquippedMedals);
+userProfileRouter.post('/:id/equipped-medals', authenticate, userController.setMyEquippedMedals);
 
 // Social, Follows, Followers, Visitors, & Blocks (mounted directly on /users/:id)
 userProfileRouter.get('/:id/social-profile', optionalAuthenticate, socialController.getSocialProfile);

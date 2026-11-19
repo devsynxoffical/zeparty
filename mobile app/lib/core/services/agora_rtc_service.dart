@@ -298,6 +298,7 @@ class AgoraRtcService {
           autoSubscribeVideo: isVideo,
           publishCameraTrack: isHost && isVideo,
           publishMicrophoneTrack: isHost,
+          publishMixedAudioTrack: true,
           clientRoleType: isHost
               ? ClientRoleType.clientRoleBroadcaster
               : ClientRoleType.clientRoleAudience,
@@ -326,6 +327,7 @@ class AgoraRtcService {
         ChannelMediaOptions(
           publishCameraTrack: isHost && isVideo,
           publishMicrophoneTrack: isHost,
+          publishMixedAudioTrack: true,
           clientRoleType: isHost
               ? ClientRoleType.clientRoleBroadcaster
               : ClientRoleType.clientRoleAudience,
@@ -391,7 +393,24 @@ class AgoraRtcService {
   Future<void> muteLocalAudio(bool muted) async {
     _lastMutedAudio = muted;
     try {
-      await _engine?.muteLocalAudioStream(muted);
+      if (_isAudioMixing) {
+        // Bug #24: Mute microphone audio while preserving background music broadcast to the room!
+        await _engine?.muteRecordingSignal(muted);
+        await _engine?.updateChannelMediaOptions(
+          ChannelMediaOptions(
+            publishMicrophoneTrack: !muted,
+            publishMixedAudioTrack: true,
+          ),
+        );
+      } else {
+        await _engine?.muteRecordingSignal(muted);
+        await _engine?.muteLocalAudioStream(muted);
+        await _engine?.updateChannelMediaOptions(
+          ChannelMediaOptions(
+            publishMicrophoneTrack: !muted,
+          ),
+        );
+      }
     } catch (_) {}
   }
 
@@ -401,7 +420,32 @@ class AgoraRtcService {
     } catch (_) {}
   }
 
-  // ── Audio Mixing (NEW-033) ──
+  // ── Bug #21: Ultra HD Audio Engine Mode ──
+  bool _isUltraHdAudio = true;
+  bool get isUltraHdAudio => _isUltraHdAudio;
+
+  Future<void> setUltraHdAudio(bool enabled) async {
+    _isUltraHdAudio = enabled;
+    if (_engine == null) return;
+    try {
+      if (enabled) {
+        await _engine!.setAudioProfile(
+          profile: AudioProfileType.audioProfileMusicHighQualityStereo,
+          scenario: AudioScenarioType.audioScenarioGameStreaming,
+        );
+      } else {
+        await _engine!.setAudioProfile(
+          profile: AudioProfileType.audioProfileMusicStandard,
+          scenario: AudioScenarioType.audioScenarioDefault,
+        );
+      }
+      debugPrint('[AgoraRtcService] Ultra HD Audio Engine set to: $enabled');
+    } catch (e) {
+      debugPrint('[AgoraRtcService] setUltraHdAudio error: $e');
+    }
+  }
+
+  // ── Audio Mixing (Bug #24: Room Music Broadcasting) ──
   bool _isAudioMixing = false;
   bool _isAudioMixingPaused = false;
   double _audioMixingVolume = 0.8;
@@ -419,9 +463,20 @@ class AgoraRtcService {
   }) async {
     if (_engine == null) return false;
     try {
+      // Ensure client is in broadcaster role and publishing mixed audio to the RTC channel
+      await _engine!.setClientRole(role: ClientRoleType.clientRoleBroadcaster);
+      await _engine!.updateChannelMediaOptions(
+        ChannelMediaOptions(
+          publishMixedAudioTrack: true,
+          publishMicrophoneTrack: !(_lastMutedAudio ?? false),
+          clientRoleType: ClientRoleType.clientRoleBroadcaster,
+        ),
+      );
+
+      // loopback: false ensures the audio stream is published to all remote participants!
       await _engine!.startAudioMixing(
         filePath: filePath,
-        loopback: loopback,
+        loopback: false,
         cycle: cycle,
         startPos: startPos,
       );

@@ -281,6 +281,17 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
           liveRoomId: isLiveVal ? liveRoomIdVal : null,
           isOnline: isOnlineVal,
         );
+        final serverMedals = profileData['equippedMedalIds'] ?? profileData['equippedMedals'];
+        if (serverMedals is List && serverMedals.isNotEmpty) {
+          final sIds = serverMedals.map((e) => e.toString()).toSet();
+          if (mounted) {
+            setState(() {
+              _hasExplicitMedalSelection = true;
+              _equippedMedalIds = sIds;
+            });
+          }
+          MedalManager.saveEquippedMedalIds(user.id, sIds);
+        }
         if (isFollowing && !auth.isFollowing(user.id)) {
           auth.syncFollowingList();
         }
@@ -368,12 +379,25 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
     if (targetId.isNotEmpty) {
       final hasSaved = await MedalManager.hasSavedEquippedMedals(targetId);
       final ids = await MedalManager.getEquippedMedalIds(targetId);
-      if (mounted) {
+      if (hasSaved && ids.isNotEmpty && mounted) {
         setState(() {
-          _hasExplicitMedalSelection = hasSaved;
+          _hasExplicitMedalSelection = true;
           _equippedMedalIds = ids;
         });
       }
+
+      // Authoritative remote fetch across devices (Bug 15)
+      try {
+        final serverMedals = await SocialRepository.instance.getUserEquippedMedals(targetId);
+        if (serverMedals.isNotEmpty && mounted) {
+          final sIds = serverMedals.toSet();
+          setState(() {
+            _hasExplicitMedalSelection = true;
+            _equippedMedalIds = sIds;
+          });
+          MedalManager.saveEquippedMedalIds(targetId, sIds);
+        }
+      } catch (_) {}
     }
   }
 
@@ -2614,7 +2638,21 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
       }
     }
 
-    final isAsset = medal.iconUrl.startsWith('assets/');
+    String effectiveIcon = medal.iconUrl;
+    // Map any raw SVIP / noble icon keys to full local asset path if needed (Bug 15)
+    if (effectiveIcon.contains('svip-') || effectiveIcon.contains('svip_')) {
+      final match = RegExp(r'svip[-_](\d+)').firstMatch(effectiveIcon);
+      if (match != null) {
+        effectiveIcon = 'assets/svip/svip-${match.group(1)}_badge.webp';
+      }
+    } else if (effectiveIcon.contains('king_badge') && !effectiveIcon.startsWith('assets/')) {
+      effectiveIcon = 'assets/nobles/ZP-037_tier-6-king_badge.webp';
+    } else if (effectiveIcon.contains('emperor_badge') && !effectiveIcon.startsWith('assets/')) {
+      effectiveIcon = 'assets/nobles/emperor_badge.webp';
+    }
+
+    final isAsset = effectiveIcon.startsWith('assets/');
+    final isNetwork = effectiveIcon.startsWith('http://') || effectiveIcon.startsWith('https://');
 
     return Container(
       width: 52,
@@ -2633,7 +2671,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
       ),
       child: isAsset
           ? Image.asset(
-              medal.iconUrl,
+              effectiveIcon,
               fit: BoxFit.contain,
               errorBuilder: (_, __, ___) => const Icon(
                 Icons.emoji_events_rounded,
@@ -2641,11 +2679,21 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                 color: Colors.amber,
               ),
             )
-          : Icon(
-              getMedalIcon(medal.iconUrl),
-              size: 26,
-              color: Colors.amber,
-            ),
+          : isNetwork
+              ? Image.network(
+                  effectiveIcon,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => const Icon(
+                    Icons.emoji_events_rounded,
+                    size: 26,
+                    color: Colors.amber,
+                  ),
+                )
+              : Icon(
+                  getMedalIcon(effectiveIcon),
+                  size: 26,
+                  color: Colors.amber,
+                ),
     );
   }
 

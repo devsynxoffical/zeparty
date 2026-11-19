@@ -236,6 +236,13 @@ class LivePartyProvider extends ChangeNotifier {
   String? _lastJoinFailureReason;
   String? get lastJoinFailureReason => _lastJoinFailureReason;
 
+  bool _autoMuteNewSpeakers = false;
+  bool get autoMuteNewSpeakers => _autoMuteNewSpeakers;
+  void setAutoMuteNewSpeakers(bool val) {
+    _autoMuteNewSpeakers = val;
+    notifyListeners();
+  }
+
   // Stream Subscriptions
   final Map<int, double> _seatVoiceLevels = {};
   Map<int, double> get seatVoiceLevels => _seatVoiceLevels;
@@ -786,6 +793,16 @@ class LivePartyProvider extends ChangeNotifier {
       if (_activeRoom != null) {
         _activeRoom = RoomConfigManager.instance.applyOverrides(_activeRoom!);
         _lockedSeatIndices.addAll(RoomConfigManager.instance.getLockedSeats(_activeRoom!.id));
+        final currentSeats = _activeRoom?.seats;
+        if (currentSeats != null && currentSeats.isNotEmpty) {
+          for (final s in currentSeats) {
+            if (s.isLocked) {
+              _lockedSeatIndices.add(s.seatIndex);
+            } else {
+              _lockedSeatIndices.remove(s.seatIndex);
+            }
+          }
+        }
         _roomSendingTotal = RoomConfigManager.instance.getRoomSendingTotal(_activeRoom!.id);
 
         // Synchronize Daily sending total with backend rankings (Item 30 monotonic guard)
@@ -836,6 +853,14 @@ class LivePartyProvider extends ChangeNotifier {
           final sMap = Map<String, dynamic>.from(sRaw);
           final sIdx = (sMap['seatIndex'] is num) ? (sMap['seatIndex'] as num).toInt() : int.tryParse(sMap['seatIndex']?.toString() ?? '');
           if (sIdx == null) continue;
+          if (sMap['isLocked'] != null) {
+            final isLocked = sMap['isLocked'] == true;
+            if (isLocked) {
+              _lockedSeatIndices.add(sIdx);
+            } else {
+              _lockedSeatIndices.remove(sIdx);
+            }
+          }
           final occUserRaw = sMap['occupiedUser'] ?? sMap['user'];
           final occUserId = sMap['occupiedUserId']?.toString() ?? sMap['userId']?.toString() ?? (occUserRaw is Map ? occUserRaw['id']?.toString() : null);
 
@@ -1542,6 +1567,19 @@ class LivePartyProvider extends ChangeNotifier {
         final rawIdx = data['seatIndex'] ?? data['seatNumber'];
         final seatIndex = (rawIdx is num) ? rawIdx.toInt() : int.tryParse(rawIdx?.toString() ?? '');
         if (seatIndex == null) return;
+
+        if (data['isLocked'] != null) {
+          final isLocked = data['isLocked'] == true || data['locked'] == true;
+          if (isLocked) {
+            _lockedSeatIndices.add(seatIndex);
+          } else {
+            _lockedSeatIndices.remove(seatIndex);
+          }
+          final currentId = _activeRoom?.id ?? _initialRoomId ?? '';
+          if (currentId.isNotEmpty) {
+            RoomConfigManager.instance.setSeatLocked(currentId, seatIndex, isLocked);
+          }
+        }
 
         final userRaw = data['user'] ?? data['occupiedUser'];
         if (userRaw is Map && userRaw['id'] != null && userRaw['id'].toString().isNotEmpty) {
@@ -2731,22 +2769,20 @@ class LivePartyProvider extends ChangeNotifier {
     // 18. Mic Seat Locked Status Stream (Item 04 & 07, Mic 7 & 8)
     _socketSeatLockedSub?.cancel();
     _socketSeatLockedSub = _socketService.onSeatLocked.listen((data) {
-      final rId = data['roomId']?.toString();
+      if (!matchesCurrentRoom(data)) return;
       final currentId = _activeRoom?.id ?? _initialRoomId ?? '';
-      if (rId == null || rId == currentId) {
-        final seatIndex = (data['seatIndex'] is num) ? (data['seatIndex'] as num).toInt() : int.tryParse(data['seatIndex']?.toString() ?? '');
-        final isLocked = data['isLocked'] == true || data['locked'] == true;
-        if (seatIndex != null) {
-          if (isLocked) {
-            _lockedSeatIndices.add(seatIndex);
-          } else {
-            _lockedSeatIndices.remove(seatIndex);
-          }
-          if (currentId.isNotEmpty) {
-            RoomConfigManager.instance.setSeatLocked(currentId, seatIndex, isLocked);
-          }
-          notifyListeners();
+      final seatIndex = (data['seatIndex'] is num) ? (data['seatIndex'] as num).toInt() : int.tryParse(data['seatIndex']?.toString() ?? '');
+      final isLocked = data['isLocked'] == true || data['locked'] == true;
+      if (seatIndex != null) {
+        if (isLocked) {
+          _lockedSeatIndices.add(seatIndex);
+        } else {
+          _lockedSeatIndices.remove(seatIndex);
         }
+        if (currentId.isNotEmpty) {
+          RoomConfigManager.instance.setSeatLocked(currentId, seatIndex, isLocked);
+        }
+        notifyListeners();
       }
     });
 
@@ -3448,29 +3484,32 @@ class LivePartyProvider extends ChangeNotifier {
       isSeated: true,
     );
 
+    final initialMicStatus = (_autoMuteNewSpeakers && !isHostActor) ? MicStatus.muted : MicStatus.on;
+
     if (existingIdx != -1) {
       _participants[existingIdx] = _participants[existingIdx].copyWith(
         user: actor,
         seatNumber: seatIndex,
         role: resolvedRole,
-        micStatus: MicStatus.on,
+        micStatus: initialMicStatus,
       );
     } else {
       _participants.add(PartyParticipantModel(
         user: actor,
         role: resolvedRole,
         seatNumber: seatIndex,
-        micStatus: MicStatus.on,
+        micStatus: initialMicStatus,
         joinedAt: DateTime.now(),
       ));
     }
 
-    // Promote Agora Role to Broadcaster and unmute local audio if actor is current user (Fix 31.1)
+    // Promote Agora Role to Broadcaster and configure local audio
     if (actor.id == _currentUser?.id) {
-      _isLocalSelfMuted = false;
+      final shouldMuteAudio = (_autoMuteNewSpeakers && !isHostActor);
+      _isLocalSelfMuted = shouldMuteAudio;
       try {
         await _agoraService.switchRole(isHost: true);
-        await _agoraService.muteLocalAudio(false);
+        await _agoraService.muteLocalAudio(shouldMuteAudio);
       } catch (_) {}
     }
 
@@ -3552,6 +3591,14 @@ class LivePartyProvider extends ChangeNotifier {
           final sMap = Map<String, dynamic>.from(seatRaw);
           final sIdx = (sMap['seatIndex'] is num) ? (sMap['seatIndex'] as num).toInt() : int.tryParse(sMap['seatIndex']?.toString() ?? '');
           if (sIdx == null) continue;
+          if (sMap['isLocked'] != null) {
+            final isLocked = sMap['isLocked'] == true;
+            if (isLocked) {
+              _lockedSeatIndices.add(sIdx);
+            } else {
+              _lockedSeatIndices.remove(sIdx);
+            }
+          }
           final userRaw = sMap['occupiedUser'] ?? sMap['user'];
           if (userRaw == null || (userRaw is Map && (userRaw['id'] == null || userRaw['id'].toString().isEmpty))) {
             final occIdx = _participants.indexWhere((p) => p.seatNumber == sIdx);

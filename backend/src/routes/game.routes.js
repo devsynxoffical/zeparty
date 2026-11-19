@@ -10,6 +10,7 @@ userGameRouter.get('/token', authenticate, gameController.getGamesToken);
 
 // ── Module 01: Rocket Game 5-Level Targets ──
 userGameRouter.get('/rocket/progress', gameController.getRocketProgress);
+userGameRouter.get('/rocket/room/:roomId', gameController.getRoomRocketProgress);
 userGameRouter.post('/rocket/contribute', authenticate, gameController.contributeRocket);
 
 // ── Daily Quest Mini-Game Activity Recording ──
