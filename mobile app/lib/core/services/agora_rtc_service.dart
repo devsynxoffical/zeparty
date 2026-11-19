@@ -44,9 +44,15 @@ class AgoraRtcService {
   final _volumeIndicationController =
       StreamController<List<AudioVolumeInfo>>.broadcast();
   final Set<int> _remoteUids = <int>{};
+  final Set<int> _videoMutedRemoteUids = <int>{};
+  final _remoteUserVideoMutedController = StreamController<Map<String, dynamic>>.broadcast();
+  bool _isFrontCamera = true;
 
   Stream<int> get activeSpeakerStream => _activeSpeakerController.stream;
   Stream<Set<int>> get remoteUsersStream => _remoteUsersController.stream;
+  Stream<Map<String, dynamic>> get remoteUserVideoMutedStream => _remoteUserVideoMutedController.stream;
+  bool isRemoteVideoMuted(int uid) => _videoMutedRemoteUids.contains(uid);
+  bool get isFrontCamera => _isFrontCamera;
   Stream<int> get firstRemoteVideoFrameStream =>
       _firstRemoteVideoFrameController.stream;
   Stream<AudioMixingStateChange> get audioMixingStateStream =>
@@ -151,9 +157,19 @@ class AgoraRtcService {
                   // Remote opponent host left PK channel
                 } else {
                   _remoteUids.remove(remoteUid);
+                  _videoMutedRemoteUids.remove(remoteUid);
                   _remoteUsersController.add(Set.from(_remoteUids));
                 }
               },
+          onUserMuteVideo: (RtcConnection connection, int remoteUid, bool muted) {
+            debugPrint('[AgoraRtcService] onUserMuteVideo remoteUid: $remoteUid, muted: $muted');
+            if (muted) {
+              _videoMutedRemoteUids.add(remoteUid);
+            } else {
+              _videoMutedRemoteUids.remove(remoteUid);
+            }
+            _remoteUserVideoMutedController.add({'uid': remoteUid, 'muted': muted});
+          },
           onFirstRemoteVideoFrame:
               (
                 RtcConnection connection,
@@ -246,13 +262,17 @@ class AgoraRtcService {
     } catch (_) {}
   }
 
-  Future<void> switchCamera() async {
+  Future<bool> switchCamera() async {
     try {
       if (_engine != null) {
         await _engine!.switchCamera();
+        _isFrontCamera = !_isFrontCamera;
+        return true;
       }
+      return false;
     } catch (e) {
       debugPrint('[AgoraRtcService] switchCamera error: $e');
+      return false;
     }
   }
 
@@ -314,6 +334,10 @@ class AgoraRtcService {
   Future<void> switchRole({required bool isHost, bool isVideo = false}) async {
     _lastBroadcasterRole = isHost;
     try {
+      if (isHost && isVideo) {
+        await _setupVideo();
+        await _engine?.startPreview();
+      }
       await _engine?.setClientRole(
         role: isHost
             ? ClientRoleType.clientRoleBroadcaster
@@ -417,6 +441,17 @@ class AgoraRtcService {
   Future<void> muteLocalVideo(bool muted) async {
     try {
       await _engine?.muteLocalVideoStream(muted);
+      await _engine?.updateChannelMediaOptions(
+        ChannelMediaOptions(
+          publishCameraTrack: !muted,
+        ),
+      );
+      if (muted) {
+        await _engine?.stopPreview();
+      } else {
+        await _setupVideo();
+        await _engine?.startPreview();
+      }
     } catch (_) {}
   }
 

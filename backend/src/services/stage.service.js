@@ -577,11 +577,12 @@ export async function updateStageCameraState(
     throw error;
   }
 
+  const isHost = actorUserId === room.creatorUserId;
   const occupiedSeat = Array.isArray(room.seats)
-    ? room.seats.find((s) => s.occupiedUserId === actorUserId || (s.seatIndex === 0 && actorUserId === room.creatorUserId))
+    ? room.seats.find((s) => s.occupiedUserId === actorUserId || (s.seatIndex === 0 && isHost))
     : null;
 
-  if (!occupiedSeat) {
+  if (!occupiedSeat && !isHost) {
     const error = new Error('You do not occupy a stage slot');
     error.statusCode = 400;
     error.code = 'USER_NOT_ON_STAGE';
@@ -591,23 +592,26 @@ export async function updateStageCameraState(
   const boolCamera = Boolean(isCameraOn);
   await setParticipantCameraState(roomId, actorUserId, boolCamera);
 
+  const seatIndex = occupiedSeat?.seatIndex ?? (isHost ? 0 : 1);
+
   const stageSnapshot = await broadcastStageUpdate(roomId, 'CAMERA_TOGGLED', {
-    seatIndex: occupiedSeat.seatIndex,
+    seatIndex,
     userId: actorUserId,
     isCameraOn: boolCamera,
   }, db);
 
   const cameraPayload = {
     roomId,
-    seatIndex: occupiedSeat.seatIndex,
+    seatIndex,
     userId: actorUserId,
     isCameraOn: boolCamera,
-    version: stageSnapshot.version,
+    version: stageSnapshot?.version || 1,
     timestamp: new Date().toISOString(),
   };
 
   socketEmitter.emitToRoom(roomId, 'room:camera_toggled', cameraPayload);
   socketEmitter.emitToRoom(roomId, 'stage:camera_toggled', cameraPayload);
+  socketEmitter.emitToRoom(roomId, 'room:broadcaster_camera_state', cameraPayload);
 
   return {
     success: true,

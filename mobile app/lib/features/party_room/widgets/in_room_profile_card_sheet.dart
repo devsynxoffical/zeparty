@@ -371,16 +371,18 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                               UserAvatar(
                                 imageUrl: user.avatarUrl,
                                 radius: 30,
-                                showVipFrame: user.isVip,
-                                frameAsset: (user.avatarFrame.isNotEmpty && user.avatarFrame != 'none')
+                                showVipFrame: context.watch<LivePartyProvider>().frameEffectsEnabled && user.isVip,
+                                frameAsset: (context.watch<LivePartyProvider>().frameEffectsEnabled && user.avatarFrame.isNotEmpty && user.avatarFrame != 'none')
                                     ? user.avatarFrame
-                                    : NobleBadgeHelper.getFrameAsset(
-                                        user.hasActiveNoble
-                                            ? user.nobleTitle
-                                            : (user.svipLevel > 0
-                                                ? 'SVIP ${user.svipLevel}'
-                                                : user.role.name),
-                                      ),
+                                    : (context.watch<LivePartyProvider>().frameEffectsEnabled
+                                        ? NobleBadgeHelper.getFrameAsset(
+                                            user.hasActiveNoble
+                                                ? user.nobleTitle
+                                                : (user.svipLevel > 0
+                                                    ? 'SVIP ${user.svipLevel}'
+                                                    : user.role.name),
+                                          )
+                                        : null),
                               ),
                             ],
                           ),

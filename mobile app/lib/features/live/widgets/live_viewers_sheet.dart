@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -6,6 +7,7 @@ import '../../../../models/user_model.dart';
 import '../../../../models/party_participant_model.dart';
 import '../../../../providers/auth_provider.dart';
 import '../../../../providers/live_party_provider.dart';
+import '../../../../core/services/socket_service.dart';
 import '../../profile/user_profile_details_screen.dart';
 
 class LiveViewersSheet extends StatefulWidget {
@@ -61,9 +63,77 @@ class LiveViewersSheet extends StatefulWidget {
 class _LiveViewersSheetState extends State<LiveViewersSheet> {
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
+  List<UserModel> _activeViewers = [];
+  StreamSubscription? _userLeftSub;
+  StreamSubscription? _userJoinedSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _activeViewers = _deduplicateViewers(widget.viewers);
+    _initPresenceListeners();
+  }
+
+  List<UserModel> _deduplicateViewers(List<UserModel> source) {
+    final seen = <String>{};
+    final list = <UserModel>[];
+    for (final u in source) {
+      if (u.id.isNotEmpty && !seen.contains(u.id)) {
+        seen.add(u.id);
+        list.add(u);
+      }
+    }
+    return list;
+  }
+
+  void _initPresenceListeners() {
+    widget.partyProvider?.addListener(_onPartyProviderChanged);
+    _userLeftSub = SocketService.instance.userLeftStream.listen((data) {
+      final leftId = data['userId']?.toString() ?? data['id']?.toString();
+      final leftUsername = data['username']?.toString() ?? (data['user'] is Map ? (data['user'] as Map)['username']?.toString() : null);
+      if (leftId != null && mounted) {
+        setState(() {
+          _activeViewers.removeWhere((v) =>
+              v.id == leftId ||
+              v.id.toLowerCase() == leftId.toLowerCase() ||
+              (leftUsername != null && v.username.isNotEmpty && v.username.toLowerCase() == leftUsername.toLowerCase()));
+        });
+      }
+    });
+
+    _userJoinedSub = SocketService.instance.userJoinedStream.listen((data) {
+      if (data['user'] is Map && mounted) {
+        try {
+          final joinedUser = UserModel.fromJson(Map<String, dynamic>.from(data['user'] as Map));
+          if (joinedUser.id.isNotEmpty && !_activeViewers.any((v) => v.id == joinedUser.id)) {
+            setState(() {
+              _activeViewers.add(joinedUser);
+            });
+          }
+        } catch (_) {}
+      }
+    });
+  }
+
+  void _onPartyProviderChanged() {
+    if (!mounted || widget.partyProvider == null) return;
+    final prov = widget.partyProvider!;
+    final hostId = prov.activeRoom?.host.id;
+    final creatorId = prov.activeRoom?.creatorUserId;
+    final fresh = prov.participants
+        .where((p) => p.seatNumber == null && p.user.id != hostId && p.user.id != creatorId)
+        .map((p) => p.user)
+        .toList();
+    setState(() {
+      _activeViewers = _deduplicateViewers(fresh);
+    });
+  }
 
   @override
   void dispose() {
+    widget.partyProvider?.removeListener(_onPartyProviderChanged);
+    _userLeftSub?.cancel();
+    _userJoinedSub?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -76,7 +146,7 @@ class _LiveViewersSheetState extends State<LiveViewersSheet> {
     final textColor = isDark ? Colors.white : Colors.black87;
     final subtextColor = isDark ? Colors.white60 : Colors.black54;
 
-    final filteredViewers = widget.viewers.where((v) {
+    final filteredViewers = _activeViewers.where((v) {
       if (_searchQuery.trim().isEmpty) return true;
       final q = _searchQuery.trim().toLowerCase();
       return v.name.toLowerCase().contains(q) ||
@@ -144,7 +214,7 @@ class _LiveViewersSheetState extends State<LiveViewersSheet> {
                     border: Border.all(color: primary.withValues(alpha: 0.4), width: 0.8),
                   ),
                   child: Text(
-                    '${widget.viewers.length}',
+                    '${_activeViewers.length}',
                     style: TextStyle(
                       color: primary,
                       fontWeight: FontWeight.bold,

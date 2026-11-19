@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:collection';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/live_party_provider.dart';
 import '../core/services/socket_service.dart';
 import '../models/live_room_model.dart';
 import '../models/user_model.dart';
@@ -118,13 +120,21 @@ class _WorldBannerOverlayState extends State<WorldBannerOverlay> with SingleTick
   void _initSocketListeners() {
     final socket = SocketService.instance;
     _giftBannerSub = socket.onEvent('world:gift_banner').listen((data) {
-      if (data is Map<String, dynamic>) {
+      if (data is Map<String, dynamic> && mounted) {
+        try {
+          final partyProv = Provider.of<LivePartyProvider>(context, listen: false);
+          if (!partyProv.giftBannerNotificationEnabled) return;
+        } catch (_) {}
         _enqueue(WorldBannerItem.fromGift(data));
       }
     });
 
     _rocketBannerSub = socket.onEvent('world:rocket_unlocked').listen((data) {
-      if (data is Map<String, dynamic>) {
+      if (data is Map<String, dynamic> && mounted) {
+        try {
+          final partyProv = Provider.of<LivePartyProvider>(context, listen: false);
+          if (!partyProv.gameBannerNotificationEnabled) return;
+        } catch (_) {}
         _enqueue(WorldBannerItem.fromRocket(data));
       }
     });

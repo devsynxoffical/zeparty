@@ -471,7 +471,8 @@ class MultiRoleSeatGrid extends StatelessWidget {
               participant.user.username.toLowerCase() == authUser.username.toLowerCase());
       final effectiveUser = isSelf ? authUser : participant.user;
 
-      final effectiveFrame = (effectiveUser.avatarFrame == 'none')
+      final frameEffectsEnabled = context.watch<LivePartyProvider>().frameEffectsEnabled;
+      final effectiveFrame = (!frameEffectsEnabled || effectiveUser.avatarFrame == 'none')
           ? null
           : (effectiveUser.avatarFrame.isNotEmpty
               ? effectiveUser.avatarFrame

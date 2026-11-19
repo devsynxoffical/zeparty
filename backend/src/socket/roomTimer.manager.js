@@ -220,7 +220,7 @@ export async function startHostAbsentTimer(roomId, roomType, hostUserId, io, { i
     const absentPayload = {
       roomId,
       hostUserId,
-      hostAbsent: !isIntentional,
+      hostAbsent: false,
       hostLeft: true,
       isIntentional,
       reason: isIntentional ? 'HOST_VOLUNTARY_LEAVE' : 'HOST_NETWORK_DISCONNECT',
@@ -229,9 +229,7 @@ export async function startHostAbsentTimer(roomId, roomType, hostUserId, io, { i
       willSleepIfEmptyInSeconds: scheduled ? Math.round(DEFAULT_PARTY_SLEEP_DELAY_MS / 1000) : null,
       message: isIntentional
         ? 'Host has left the room. The party room remains open for all members.'
-        : (activeCount > 0
-            ? 'Host has disconnected. The party room remains open for all members.'
-            : 'Room is empty and will go to sleep in 12 seconds.'),
+        : 'Party room continues for all members.',
     };
 
     if (io) {

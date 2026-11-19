@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../core/services/agora_rtc_service.dart';
 import '../core/services/socket_service.dart';
 import '../core/services/api_client.dart';
@@ -49,6 +50,32 @@ class LivePartyProvider extends ChangeNotifier {
   final RoomRepository _roomRepository = RoomRepository.instance;
   final SocketService _socketService = SocketService.instance;
   final ApiClient _apiClient = ApiClient.instance;
+
+  static const String _prefGiftEffects = 'party_effects_gift_effects';
+  static const String _prefFrameEffects = 'party_effects_frame_effects';
+  static const String _prefEntryEffects = 'party_effects_entry_effects';
+  static const String _prefGiftBanner = 'party_effects_gift_banner';
+  static const String _prefRedEnvelopeBanner = 'party_effects_red_envelope_banner';
+  static const String _prefGameBanner = 'party_effects_game_banner';
+
+  LivePartyProvider() {
+    _loadEffectsSettings();
+  }
+
+  Future<void> _loadEffectsSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _giftEffectsEnabled = prefs.getBool(_prefGiftEffects) ?? true;
+      _frameEffectsEnabled = prefs.getBool(_prefFrameEffects) ?? true;
+      _entryEffectsEnabled = prefs.getBool(_prefEntryEffects) ?? true;
+      _giftBannerNotificationEnabled = prefs.getBool(_prefGiftBanner) ?? true;
+      _redEnvelopeBannerNotificationEnabled = prefs.getBool(_prefRedEnvelopeBanner) ?? true;
+      _gameBannerNotificationEnabled = prefs.getBool(_prefGameBanner) ?? true;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[LivePartyProvider] _loadEffectsSettings error: $e');
+    }
+  }
 
   // Authoritative Agora UID Mapping Stores
   final Map<int, String> _agoraUidToUserId = {};
@@ -604,31 +631,37 @@ class LivePartyProvider extends ChangeNotifier {
 
   void toggleGiftEffects(bool value) {
     _giftEffectsEnabled = value;
+    SharedPreferences.getInstance().then((p) => p.setBool(_prefGiftEffects, value)).catchError((_) => false);
     notifyListeners();
   }
 
   void toggleFrameEffects(bool value) {
     _frameEffectsEnabled = value;
+    SharedPreferences.getInstance().then((p) => p.setBool(_prefFrameEffects, value)).catchError((_) => false);
     notifyListeners();
   }
 
   void toggleEntryEffects(bool value) {
     _entryEffectsEnabled = value;
+    SharedPreferences.getInstance().then((p) => p.setBool(_prefEntryEffects, value)).catchError((_) => false);
     notifyListeners();
   }
 
   void toggleGiftBannerNotification(bool value) {
     _giftBannerNotificationEnabled = value;
+    SharedPreferences.getInstance().then((p) => p.setBool(_prefGiftBanner, value)).catchError((_) => false);
     notifyListeners();
   }
 
   void toggleRedEnvelopeBannerNotification(bool value) {
     _redEnvelopeBannerNotificationEnabled = value;
+    SharedPreferences.getInstance().then((p) => p.setBool(_prefRedEnvelopeBanner, value)).catchError((_) => false);
     notifyListeners();
   }
 
   void toggleGameBannerNotification(bool value) {
     _gameBannerNotificationEnabled = value;
+    SharedPreferences.getInstance().then((p) => p.setBool(_prefGameBanner, value)).catchError((_) => false);
     notifyListeners();
   }
 
@@ -1819,7 +1852,16 @@ class LivePartyProvider extends ChangeNotifier {
         _participants.removeWhere((p) =>
             p.user.id == leftUserId ||
             p.user.id.toLowerCase() == leftIdLower ||
-            p.user.id.toLowerCase().replaceFirst(RegExp(r'^user_'), '') == leftIdClean);
+            p.user.id.toLowerCase().replaceFirst(RegExp(r'^user_'), '') == leftIdClean ||
+            (leftUsername != null && p.user.username.isNotEmpty && p.user.username.toLowerCase() == leftUsername.toLowerCase()));
+
+        if (_activeRoom != null && _savedRoomMembers.containsKey(_activeRoom!.id)) {
+          _savedRoomMembers[_activeRoom!.id]!.removeWhere((p) =>
+              p.user.id == leftUserId ||
+              p.user.id.toLowerCase() == leftIdLower ||
+              p.user.id.toLowerCase().replaceFirst(RegExp(r'^user_'), '') == leftIdClean ||
+              (leftUsername != null && p.user.username.isNotEmpty && p.user.username.toLowerCase() == leftUsername.toLowerCase()));
+        }
 
         final rawCount = data['viewerCount'] ?? data['count'] ?? data['currentViewersCount'];
         final parsedViewerCount = (rawCount is num) ? rawCount.toInt() : int.tryParse(rawCount?.toString() ?? '');
@@ -2858,19 +2900,12 @@ class LivePartyProvider extends ChangeNotifier {
       notifyListeners();
     });
 
-    // Host Presence & Grace Period Stream (Bug 06)
+    // Host Presence & Grace Period Stream (Bug 26: Party Rooms suppress reconnecting banner entirely)
     _socketRoomHostAbsentSub?.cancel();
     _socketRoomHostAbsentSub = _socketService.onRoomHostAbsent.listen((data) {
       if (!matchesCurrentRoom(data)) return;
-      // Do not show reconnect banner for intentional leave or when room remains open for members
-      final roomStaysOpen = data['roomStaysOpen'] == true;
-      final hostLeft = data['reason'] == 'HOST_AWAY' || data['reason'] == 'HOST_LEFT';
-      final isIntentional = data['isIntentional'] == true || data['intentional'] == true;
-      if (roomStaysOpen || hostLeft || isIntentional) {
-        _isHostAbsent = false;
-      } else {
-        _isHostAbsent = true;
-      }
+      // Party rooms must NEVER display the host reconnecting/absent banner
+      _isHostAbsent = false;
       notifyListeners();
     });
 

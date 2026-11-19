@@ -1436,11 +1436,10 @@ export async function onSocketDisconnect(io, socket, db) {
                 roomStaysOpen: true,
                 isIntentional: false,
                 reason: 'HOST_NETWORK_DISCONNECT',
-                message: 'Host connection dropped. Reconnecting...',
+                message: 'Party room remains active for all members.',
               };
               broadcastTarget.emit(SOCKET_EVENTS.ROOM_USER_LEFT, hostAwayPayload);
               broadcastTarget.emit('user_left', hostAwayPayload);
-              broadcastTarget.emit('room:host_away', hostAwayPayload);
               broadcastTarget.emit('room:host_left', hostAwayPayload);
               startHostAbsentTimer(room.id, 'AUDIO_PARTY', userId, io, { isIntentional: false });
             } else {
@@ -3432,6 +3431,8 @@ export function registerRoomHandlers(io, socket) {
 
   socket.on('stage:camera_toggle', (d, cb) => onStageCameraToggle(io, socket, d, cb));
   socket.on('room:stage_camera_toggle', (d, cb) => onStageCameraToggle(io, socket, d, cb));
+  socket.on('room:camera_toggle', (d, cb) => onStageCameraToggle(io, socket, d, cb));
+  socket.on('live:camera_toggle', (d, cb) => onStageCameraToggle(io, socket, d, cb));
 
   // Bug #21: Advanced Room Controls & Stage Soundboard Sync
   socket.on('room:update_advanced_controls', (d, cb) => onUpdateAdvancedControls(io, socket, d, cb));

@@ -1345,28 +1345,26 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                               ),
                             ),
 
-                          // Banners Strip
-                          const SvipEntryBanner(),
-
-                          // Room Entry Mount Banner Widget
-                          RoomEntryMountBannerWidget(
-                            roomId: widget.room.id,
-                            currentBanner: _currentMountBanner,
-                            onBannerComplete: () {
-                              if (mounted) {
-                                setState(() {
-                                  _currentMountBanner = null;
-                                });
-                              }
-                            },
-                          ),
-
-                          // Room Entry Announcement Banner
-                          RoomEntryAnnouncementBanner(
-                            roomId: widget.room.id,
-                            roomEntrySessionId: _roomEntrySessionId,
-                            isDark: isDark,
-                          ),
+                          // Banners Strip (Entry Effects)
+                          if (provider.entryEffectsEnabled) ...[
+                            const SvipEntryBanner(),
+                            RoomEntryMountBannerWidget(
+                              roomId: widget.room.id,
+                              currentBanner: _currentMountBanner,
+                              onBannerComplete: () {
+                                if (mounted) {
+                                  setState(() {
+                                    _currentMountBanner = null;
+                                  });
+                                }
+                              },
+                            ),
+                            RoomEntryAnnouncementBanner(
+                              roomId: widget.room.id,
+                              roomEntrySessionId: _roomEntrySessionId,
+                              isDark: isDark,
+                            ),
+                          ],
 
                           // Coordinated Room Guidelines Notice & Chat Filters Bar
                           _buildRoomNoticeAndFilterBar(provider),
@@ -1457,7 +1455,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
             },
           ),
 
-          if (!_isClearScreenMode)
+          if (!_isClearScreenMode && provider.entryEffectsEnabled)
             TikTokUserJoinBanner(
               roomId: provider.activeRoom?.id ?? widget.room.id,
               secondaryRoomId: widget.room.id != provider.activeRoom?.id ? widget.room.id : provider.initialRoomId,
@@ -1467,23 +1465,24 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
           // Realtime Animated Emoji Reaction Overlay Layer (Top of Stack)
           EmojiReactionOverlay(roomId: provider.activeRoom?.id ?? widget.room.id),
 
-          // TikTok Live Gifting Overlay
-          TikTokGiftOverlay(
-            roomId: widget.room.id,
-            alternativeIds: _roomAlternativeIds,
-          ),
+          // TikTok Live Gifting & Onscreen 3D Gift Animation Overlays (Gift Effects)
+          if (provider.giftEffectsEnabled) ...[
+            TikTokGiftOverlay(
+              roomId: widget.room.id,
+              alternativeIds: _roomAlternativeIds,
+            ),
+            GiftAnimationOverlay(
+              key: _giftOverlayKey,
+              roomId: widget.room.id,
+              alternativeIds: _roomAlternativeIds,
+            ),
+          ],
 
-          // Onscreen 3D Gift Animation Overlay
-          GiftAnimationOverlay(
-            key: _giftOverlayKey,
-            roomId: widget.room.id,
-            alternativeIds: _roomAlternativeIds,
-          ),
-
-          // VIP Vehicle Video & Entry Animation Overlay (ZP-BUG-014)
-          SvipVehicleEntryOverlay(
-            roomId: provider.activeRoom?.id ?? widget.room.id,
-          ),
+          // VIP Vehicle Video & Entry Animation Overlay (Entry Effects)
+          if (provider.entryEffectsEnabled)
+            SvipVehicleEntryOverlay(
+              roomId: provider.activeRoom?.id ?? widget.room.id,
+            ),
 
           // PK 3-Second Countdown Overlay (Section 1)
           if (provider.isPkCountdown)
@@ -1614,8 +1613,8 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
               ),
             ),
 
-          // World Lucky Bag Notification Banner (Topmost foreground overlay, compact & above room header)
-          if (!_isClearScreenMode)
+          // World Lucky Bag Notification Banner (Red Envelope Banner Notification)
+          if (!_isClearScreenMode && provider.redEnvelopeBannerNotificationEnabled)
             Positioned(
               top: MediaQuery.of(context).padding.top + 8,
               left: 0,
@@ -2867,9 +2866,11 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
         final isMeMsg = msg.sender.id == currentUser.id;
         final backpack = Provider.of<BackpackProvider>(context, listen: false);
         final equippedBubble = isMeMsg ? backpack.equippedBubbleUrl : (msg.sender.badge.isNotEmpty ? msg.sender.badge : null);
-        final equippedFrame = msg.sender.avatarFrame.isNotEmpty
-            ? msg.sender.avatarFrame
-            : (isMeMsg ? currentUser.avatarFrame : null);
+        final equippedFrame = provider.frameEffectsEnabled
+            ? (msg.sender.avatarFrame.isNotEmpty
+                ? msg.sender.avatarFrame
+                : (isMeMsg ? currentUser.avatarFrame : null))
+            : null;
 
         return AnimatedLiveCommentItem(
           key: ValueKey(msg.id),
