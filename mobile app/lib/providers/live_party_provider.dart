@@ -11,6 +11,7 @@ import '../core/repositories/room_repository.dart';
 import '../core/repositories/backend_repository.dart';
 import '../core/repositories/pk_repository.dart';
 import '../models/live_room_model.dart';
+import '../models/party_room_model.dart';
 import '../models/party_participant_model.dart';
 import '../models/party_message_model.dart';
 import '../models/user_model.dart';
@@ -829,10 +830,24 @@ class LivePartyProvider extends ChangeNotifier {
         final currentSeats = _activeRoom?.seats;
         if (currentSeats != null && currentSeats.isNotEmpty) {
           for (final s in currentSeats) {
-            if (s.isLocked) {
-              _lockedSeatIndices.add(s.seatIndex);
-            } else {
-              _lockedSeatIndices.remove(s.seatIndex);
+            int? sIdx;
+            bool? isLocked;
+            if (s is PartySeatModel) {
+              sIdx = s.seatIndex;
+              isLocked = s.isLocked;
+            } else if (s is Map) {
+              final rawIdx = s['seatIndex'] ?? s['seatNumber'];
+              sIdx = (rawIdx is num) ? rawIdx.toInt() : int.tryParse(rawIdx?.toString() ?? '');
+              if (s['isLocked'] != null) {
+                isLocked = s['isLocked'] == true;
+              }
+            }
+            if (sIdx != null) {
+              if (isLocked == true) {
+                _lockedSeatIndices.add(sIdx);
+              } else if (isLocked == false) {
+                _lockedSeatIndices.remove(sIdx);
+              }
             }
           }
         }
