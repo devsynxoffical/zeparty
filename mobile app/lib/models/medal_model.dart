@@ -1,11 +1,61 @@
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../core/services/api_client.dart';
 import 'user_model.dart';
 import 'user_asset_model.dart';
+
+class MedalSelectionState {
+  final Set<String> equippedIds;
+  final bool hasExplicitSelection;
+
+  const MedalSelectionState({
+    required this.equippedIds,
+    required this.hasExplicitSelection,
+  });
+}
 
 class MedalManager {
   static const String _prefPrefix = 'equipped_medal_ids_';
 
-  /// Get the set of equipped medal IDs for a given user
+  /// Bug #15: Fetch authoritative equipped medal selection from backend (shared by owner & visitor),
+  /// caching locally and falling back to SharedPreferences only when offline.
+  static Future<MedalSelectionState> fetchEquippedMedals(String userId) async {
+    if (userId.trim().isEmpty) {
+      return const MedalSelectionState(equippedIds: <String>{}, hasExplicitSelection: false);
+    }
+    try {
+      final res = await ApiClient.instance.get<Map<String, dynamic>>('/v1/users/$userId/medals');
+      final data = res.data?['data'];
+      if (data is Map) {
+        final hasExplicit = data['hasExplicitMedalSelection'] == true;
+        final rawIds = data['equippedMedalIds'];
+        final ids = rawIds is List
+            ? rawIds.map((e) => e.toString()).where((e) => e.isNotEmpty).toSet()
+            : <String>{};
+        if (hasExplicit) {
+          try {
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setStringList('$_prefPrefix$userId', ids.toList());
+          } catch (_) {}
+        }
+        return MedalSelectionState(
+          equippedIds: ids,
+          hasExplicitSelection: hasExplicit || ids.isNotEmpty,
+        );
+      }
+    } catch (e) {
+      debugPrint('[MedalManager] fetchEquippedMedals($userId) fallback to local cache: $e');
+    }
+
+    final hasSaved = await hasSavedEquippedMedals(userId);
+    final localIds = await getEquippedMedalIds(userId);
+    return MedalSelectionState(
+      equippedIds: localIds,
+      hasExplicitSelection: hasSaved,
+    );
+  }
+
+  /// Get the set of equipped medal IDs for a given user from local cache
   static Future<Set<String>> getEquippedMedalIds(String userId) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -26,12 +76,20 @@ class MedalManager {
     return false;
   }
 
-  /// Save equipped medal IDs for a given user
+  /// Save equipped medal IDs locally AND persist to authoritative backend (PUT /v1/users/me/medals)
   static Future<void> saveEquippedMedalIds(String userId, Set<String> equippedIds) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setStringList('$_prefPrefix$userId', equippedIds.toList());
     } catch (_) {}
+    try {
+      await ApiClient.instance.put<Map<String, dynamic>>(
+        '/v1/users/me/medals',
+        data: {'medalIds': equippedIds.toList()},
+      );
+    } catch (e) {
+      debugPrint('[MedalManager] saveEquippedMedalIds backend sync error: $e');
+    }
   }
 }
 
@@ -216,29 +274,35 @@ class MedalModel {
     final isHost = user.isHost;
     final isSvip = user.svipLevel > 0;
 
-    // If user has not explicitly configured equipped medals, default their active noble medal as equipped
-    String? defaultEquippedId;
+    // If user has not explicitly configured equipped medals, default active noble + active SVIP (matches backend)
+    final Set<String> defaultEquippedIds = <String>{};
     if (!hasExplicitEquippedSelection && (equippedMedalIds == null || equippedMedalIds.isEmpty)) {
       if (hasValidNoble) {
         if (isKing) {
-          defaultEquippedId = 'noble_king';
+          defaultEquippedIds.add('noble_king');
         } else if (isEmperor) {
-          defaultEquippedId = 'noble_emperor';
+          defaultEquippedIds.add('noble_emperor');
         } else if (isDuke) {
-          defaultEquippedId = 'noble_duke';
+          defaultEquippedIds.add('noble_duke');
         } else if (isMarquis) {
-          defaultEquippedId = 'noble_marquis';
+          defaultEquippedIds.add('noble_marquis');
         } else if (isCount) {
-          defaultEquippedId = 'noble_count';
+          defaultEquippedIds.add('noble_count');
         } else if (isViscount) {
-          defaultEquippedId = 'noble_viscount';
+          defaultEquippedIds.add('noble_viscount');
         } else if (isBaron) {
-          defaultEquippedId = 'noble_baron';
+          defaultEquippedIds.add('noble_baron');
         }
-      } else if (isMerchant) {
-        defaultEquippedId = 'role_merchant';
-      } else if (isSeller) {
-        defaultEquippedId = 'role_seller';
+      }
+      if (isSvip) {
+        defaultEquippedIds.add('prestige_svip');
+      }
+      if (defaultEquippedIds.isEmpty) {
+        if (isMerchant) {
+          defaultEquippedIds.add('role_merchant');
+        } else if (isSeller) {
+          defaultEquippedIds.add('role_seller');
+        }
       }
     }
 
@@ -284,7 +348,10 @@ class MedalModel {
         case 'prestige_svip':
           earned = isSvip;
           if (user.svipLevel > 0) {
-            icon = 'assets/svip/svip-${user.svipLevel.clamp(1, 16)}_badge.webp';
+            final lvl = user.svipLevel.clamp(1, 16);
+            icon = (lvl == 2 || lvl == 16)
+                ? 'assets/svip/SVIP${lvl.toString().padLeft(2, '0')}_badge_live.webp'
+                : 'assets/svip/svip-${lvl}_badge.webp';
           }
           break;
       }
@@ -292,7 +359,7 @@ class MedalModel {
       final bool equipped = earned && (
         hasExplicitEquippedSelection || (equippedMedalIds != null && equippedMedalIds.isNotEmpty)
             ? (equippedMedalIds != null && equippedMedalIds.contains(m.id))
-            : (defaultEquippedId == m.id)
+            : defaultEquippedIds.contains(m.id)
       );
 
       return m.copyWith(

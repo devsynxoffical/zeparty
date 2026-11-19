@@ -39,6 +39,14 @@ class _ApplyLiveHostScreenState extends State<ApplyLiveHostScreen> {
     super.initState();
     final authUser = context.read<AuthProvider>().currentUser;
     _selectedHostType = widget.initialHostType ?? 'BOTH';
+    final rawGender = authUser.gender.trim().toLowerCase();
+    if (rawGender == 'female') {
+      _selectedGender = 'Female';
+    } else if (rawGender == 'other') {
+      _selectedGender = 'Other';
+    } else {
+      _selectedGender = 'Male';
+    }
     _legalNameController = TextEditingController(text: authUser.name);
     _displayNameController = TextEditingController(text: authUser.username);
     _dobController = TextEditingController(text: '');
@@ -209,12 +217,15 @@ class _ApplyLiveHostScreenState extends State<ApplyLiveHostScreen> {
     final conflictMessage = eligibility?.conflictMessage ??
         'You already have an active hosting or agency role that restricts Live Hosting.';
 
-    final isApprovedHost = authUser.isHost ||
-        authUser.hasLiveHostAccess ||
-        authUser.role == UserRole.host ||
+    final isApprovedHost = authUser.hasLiveHostAccess ||
         existingApp?.status == 'Approved' ||
         liveHostProv.activeLiveHost != null;
-    final isLocked = isApprovedHost || hasRoleConflict || (existingApp != null && (existingApp.status == 'Submitted' || existingApp.status == 'Under Review' || existingApp.status == 'Approved'));
+    final isLocked = isApprovedHost ||
+        hasRoleConflict ||
+        (existingApp != null &&
+            (existingApp.status == 'Submitted' ||
+                existingApp.status == 'Under Review' ||
+                existingApp.status == 'Approved'));
 
     return Scaffold(
       backgroundColor: AppColors.getBackground(isDark),
@@ -462,17 +473,45 @@ class _ApplyLiveHostScreenState extends State<ApplyLiveHostScreen> {
                       controller: _dobController,
                       readOnly: isLocked,
                       style: TextStyle(color: AppColors.getTextPrimary(isDark)),
-                      decoration: const InputDecoration(labelText: 'Date of Birth (YYYY-MM-DD)', border: OutlineInputBorder()),
+                      decoration: InputDecoration(
+                        labelText: 'Date of Birth (YYYY-MM-DD)',
+                        border: const OutlineInputBorder(),
+                        suffixIcon: isLocked
+                            ? const Icon(Icons.lock_outline_rounded, size: 18)
+                            : IconButton(
+                                icon: const Icon(Icons.calendar_today_rounded, size: 18),
+                                tooltip: 'Pick Date of Birth',
+                                onPressed: () async {
+                                  final now = DateTime.now();
+                                  final picked = await showDatePicker(
+                                    context: context,
+                                    initialDate: DateTime(now.year - 20, now.month, now.day),
+                                    firstDate: DateTime(1940),
+                                    lastDate: DateTime(now.year - 18, now.month, now.day),
+                                  );
+                                  if (picked != null && mounted) {
+                                    final mm = picked.month.toString().padLeft(2, '0');
+                                    final dd = picked.day.toString().padLeft(2, '0');
+                                    setState(() {
+                                      _dobController.text = '${picked.year}-$mm-$dd';
+                                    });
+                                  }
+                                },
+                              ),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: DropdownButtonFormField<String>(
+                      key: ValueKey('host_gender_$_selectedGender'),
                       initialValue: _selectedGender,
                       dropdownColor: AppColors.getCard(isDark),
                       decoration: const InputDecoration(labelText: 'Gender', border: OutlineInputBorder()),
                       items: ['Male', 'Female', 'Other'].map((g) => DropdownMenuItem(value: g, child: Text(g))).toList(),
-                      onChanged: isLocked ? null : (v) => setState(() => _selectedGender = v!),
+                      onChanged: isLocked ? null : (v) {
+                        if (v != null) setState(() => _selectedGender = v);
+                      },
                     ),
                   ),
                 ],

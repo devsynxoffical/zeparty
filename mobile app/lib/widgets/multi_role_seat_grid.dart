@@ -5,7 +5,6 @@ import '../providers/auth_provider.dart';
 import '../providers/live_party_provider.dart';
 import '../providers/emoji_reaction_provider.dart';
 import '../core/utils/noble_badge_helper.dart';
-import 'pulse_glow_avatar.dart';
 import 'user_avatar.dart';
 
 class InternalVoiceMicBadge extends StatefulWidget {
@@ -471,57 +470,91 @@ class MultiRoleSeatGrid extends StatelessWidget {
               participant.user.username.toLowerCase() == authUser.username.toLowerCase());
       final effectiveUser = isSelf ? authUser : participant.user;
 
-      final effectiveFrame = (effectiveUser.avatarFrame == 'none')
-          ? null
-          : (effectiveUser.avatarFrame.isNotEmpty
-              ? effectiveUser.avatarFrame
-              : (effectiveUser.nobleTitle != null && effectiveUser.nobleTitle!.isNotEmpty
-                  ? NobleBadgeHelper.getFrameAsset(effectiveUser.nobleTitle)
-                  : (effectiveUser.svipLevel > 0
-                      ? NobleBadgeHelper.getFrameAsset('SVIP ${effectiveUser.svipLevel}')
-                      : null)));
+      final effectiveFrame = (effectiveUser.avatarFrame.isNotEmpty && effectiveUser.avatarFrame != 'none')
+          ? effectiveUser.avatarFrame
+          : null;
+
+      final double avatarSlotSize = (effectiveRadius * 2) + 4;
 
       return GestureDetector(
         onTap: () => onParticipantTap(participant),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Stack(
-              key: seatKey,
-              alignment: Alignment.center,
-              clipBehavior: Clip.none,
-              children: [
-                (participant.isSpeaking || (context.watch<LivePartyProvider>().getSeatVoiceLevel(seatIndex) > 0.05))
-                    ? PulseGlowAvatar(
-                        imageUrl: effectiveUser.avatarUrl,
-                        name: effectiveUser.name,
-                        radius: effectiveRadius + 1,
-                        glowColor: isHostUser ? Colors.amber : const Color(0xFF00E676),
-                        frameAsset: effectiveFrame,
-                      )
-                    : Container(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: effectiveFrame != null ? null : Border.all(
-                            color: isHostUser
-                                ? const Color(0xFFFFD700)
-                                : (isMod ? const Color(0xFF40C4FF) : const Color(0xFFAB47BC).withValues(alpha: 0.8)),
-                            width: 2,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: (isHostUser ? Colors.amber : const Color(0xFFAB47BC)).withValues(alpha: 0.3),
-                              blurRadius: 8,
+            SizedBox(
+              width: avatarSlotSize,
+              height: avatarSlotSize,
+              child: Stack(
+                key: seatKey,
+                alignment: Alignment.center,
+                clipBehavior: Clip.none,
+                children: [
+                  // Fixed-geometry avatar container (Bug #10: never swaps widget size on speech)
+                  Container(
+                    width: avatarSlotSize,
+                    height: avatarSlotSize,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: effectiveFrame != null
+                          ? null
+                          : Border.all(
+                              color: isHostUser
+                                  ? const Color(0xFFFFD700)
+                                  : (isMod
+                                      ? const Color(0xFF40C4FF)
+                                      : const Color(0xFFAB47BC).withValues(alpha: 0.8)),
+                              width: 2,
                             ),
-                          ],
+                      boxShadow: [
+                        BoxShadow(
+                          color: (isHostUser ? Colors.amber : const Color(0xFFAB47BC))
+                              .withValues(alpha: 0.3),
+                          blurRadius: 8,
                         ),
-                        child: UserAvatar(
-                          imageUrl: effectiveUser.avatarUrl,
-                          name: effectiveUser.name,
-                          radius: effectiveRadius,
-                          frameAsset: effectiveFrame,
-                        ),
+                      ],
+                    ),
+                    child: UserAvatar(
+                      imageUrl: effectiveUser.avatarUrl,
+                      name: effectiveUser.name,
+                      radius: effectiveRadius,
+                      frameAsset: effectiveFrame,
+                    ),
+                  ),
+
+                  // Isolated per-seat speaking indicator overlay (does not affect layout or sibling seats)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Selector<LivePartyProvider, bool>(
+                        selector: (_, prov) => prov.getSeatVoiceLevel(seatIndex) > 0.05,
+                        builder: (_, isVoiceActive, _) {
+                          final bool speaking = participant.isSpeaking || isVoiceActive;
+                          final Color glowColor =
+                              isHostUser ? Colors.amber : const Color(0xFF00E676);
+                          return AnimatedOpacity(
+                            duration: const Duration(milliseconds: 160),
+                            opacity: speaking ? 1.0 : 0.0,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: glowColor,
+                                  width: 2.5,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: glowColor.withValues(alpha: 0.65),
+                                    blurRadius: 12,
+                                    spreadRadius: 2,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
                       ),
+                    ),
+                  ),
 
                 if (isHostUser)
                   const Positioned(
@@ -554,10 +587,9 @@ class MultiRoleSeatGrid extends StatelessWidget {
                         ),
                       ],
                     ),
-                    child: Builder(
-                      builder: (ctx) {
-                        final partyProv = ctx.watch<LivePartyProvider>();
-                        final vol = partyProv.getSeatVoiceLevel(seatIndex);
+                    child: Selector<LivePartyProvider, double>(
+                      selector: (_, prov) => prov.getSeatVoiceLevel(seatIndex),
+                      builder: (_, vol, _) {
                         return InternalVoiceMicBadge(
                           isMuted: isMuted,
                           volume: vol,
@@ -568,6 +600,7 @@ class MultiRoleSeatGrid extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
             ),
             const SizedBox(height: 3),
             SizedBox(

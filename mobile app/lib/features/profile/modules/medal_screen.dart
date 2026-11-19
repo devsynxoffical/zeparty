@@ -33,15 +33,14 @@ class _MedalScreenState extends State<MedalScreen> {
       honorAssets = await SocialRepository.instance.getUserHonorAssets(user.id);
     } catch (_) {}
 
-    final hasSaved = await MedalManager.hasSavedEquippedMedals(user.id);
-    final equippedIds = await MedalManager.getEquippedMedalIds(user.id);
+    final selection = await MedalManager.fetchEquippedMedals(user.id);
     final noble = Provider.of<NobleProvider>(context, listen: false);
 
     final realMedals = MedalModel.resolveUserMedals(
       user,
       honorAssets: honorAssets,
-      equippedMedalIds: equippedIds,
-      hasExplicitEquippedSelection: hasSaved,
+      equippedMedalIds: selection.equippedIds,
+      hasExplicitEquippedSelection: selection.hasExplicitSelection,
       isNobleActive: noble.isNobleActive,
       nobleExpiryDate: noble.expiryDate,
     );

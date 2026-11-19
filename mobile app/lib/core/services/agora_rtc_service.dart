@@ -381,8 +381,23 @@ class AgoraRtcService {
 
   Future<void> muteAllRemoteAudio(bool muted) async {
     try {
-      await _engine?.muteAllRemoteAudioStreams(muted);
-      await _engine?.adjustPlaybackSignalVolume(muted ? 0 : 100);
+      if (!muted) {
+        // Bug #14: Recover remote audio playback on the FIRST unmute toggle without
+        // disturbing local microphone publishing state.
+        await _engine?.updateChannelMediaOptions(
+          const ChannelMediaOptions(autoSubscribeAudio: true),
+        );
+        await _engine?.muteAllRemoteAudioStreams(false);
+        for (final uid in List<int>.from(_remoteUids)) {
+          try {
+            await _engine?.muteRemoteAudioStream(uid: uid, mute: false);
+          } catch (_) {}
+        }
+        await _engine?.adjustPlaybackSignalVolume(100);
+      } else {
+        await _engine?.muteAllRemoteAudioStreams(true);
+        await _engine?.adjustPlaybackSignalVolume(0);
+      }
     } catch (e) {
       debugPrint('[AgoraRtcService] muteAllRemoteAudio error: $e');
     }
@@ -391,8 +406,25 @@ class AgoraRtcService {
   Future<void> muteLocalAudio(bool muted) async {
     _lastMutedAudio = muted;
     try {
-      await _engine?.muteLocalAudioStream(muted);
-    } catch (_) {}
+      if (!muted) {
+        // Bug #14: Recover local microphone publishing on the FIRST unmute toggle
+        // without disturbing remote speaker playback state.
+        await _engine?.enableLocalAudio(true);
+        await _engine?.updateChannelMediaOptions(
+          const ChannelMediaOptions(
+            publishMicrophoneTrack: true,
+            clientRoleType: ClientRoleType.clientRoleBroadcaster,
+          ),
+        );
+        await _engine?.muteLocalAudioStream(false);
+        await _engine?.adjustRecordingSignalVolume(100);
+      } else {
+        await _engine?.muteLocalAudioStream(true);
+        await _engine?.adjustRecordingSignalVolume(0);
+      }
+    } catch (e) {
+      debugPrint('[AgoraRtcService] muteLocalAudio error: $e');
+    }
   }
 
   Future<void> muteLocalVideo(bool muted) async {

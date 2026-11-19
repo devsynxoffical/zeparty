@@ -377,9 +377,17 @@ export async function transferCoins(req, res, next) {
     }
 
     const validatedData = sellerTransferCoinsSchema.parse(req.body);
+    const headerIdempotencyKey = req.headers['idempotency-key'] || req.headers['x-idempotency-key'];
     const ipAddress = req.ip || req.headers['x-forwarded-for'];
 
-    const result = await sellerService.executeSellerRechargeTransfer(sellerUserId, validatedData, { ipAddress });
+    const result = await sellerService.executeSellerRechargeTransfer(
+      sellerUserId,
+      {
+        ...validatedData,
+        idempotencyKey: validatedData.idempotencyKey || headerIdempotencyKey,
+      },
+      { ipAddress }
+    );
 
     return res.status(200).json({
       success: true,

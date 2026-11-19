@@ -217,12 +217,12 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
     final bubbleSpec = hasCustomBubble ? ChatBubbleConfig.getSpec(widget.chatBubble) : null;
     final safePadding = hasCustomBubble
         ? EdgeInsets.fromLTRB(
-            math.max(44.0, (bubbleSpec?.incomingInsets.left ?? 44.0)),
-            math.max(22.0, (bubbleSpec?.incomingInsets.top ?? 22.0)),
-            math.max(40.0, (bubbleSpec?.incomingInsets.right ?? 40.0)),
-            math.max(20.0, (bubbleSpec?.incomingInsets.bottom ?? 20.0)),
+            math.max(46.0, (bubbleSpec?.incomingInsets.left ?? 46.0)),
+            math.max(24.0, (bubbleSpec?.incomingInsets.top ?? 24.0)),
+            math.max(42.0, (bubbleSpec?.incomingInsets.right ?? 42.0)),
+            math.max(24.0, (bubbleSpec?.incomingInsets.bottom ?? 24.0)),
           )
-        : const EdgeInsets.symmetric(horizontal: 10, vertical: 5);
+        : const EdgeInsets.symmetric(horizontal: 10, vertical: 6);
 
     final screenWidth = MediaQuery.of(context).size.width;
     final maxBubbleWidth = screenWidth * 0.82;
@@ -248,21 +248,20 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
                     name: widget.senderName,
                     radius: 14,
                     showVipFrame: widget.isVip,
-                    frameAsset: (widget.avatarFrame == 'none')
-                        ? null
-                        : (widget.avatarFrame != null && widget.avatarFrame!.isNotEmpty
-                            ? widget.avatarFrame
-                            : (widget.nobleTitle != null && widget.nobleTitle!.isNotEmpty
-                                ? NobleBadgeHelper.getFrameAsset(widget.nobleTitle)
-                                : null)),
+                    frameAsset: (widget.avatarFrame != null &&
+                            widget.avatarFrame!.isNotEmpty &&
+                            widget.avatarFrame != 'none')
+                        ? widget.avatarFrame
+                        : null,
                   ),
                 ),
                 Flexible(
                   child: Container(
+                    alignment: Alignment.centerLeft,
                     padding: safePadding,
                     constraints: BoxConstraints(
-                      minHeight: hasCustomBubble ? math.max(64.0, bubbleSpec?.minHeight ?? 64.0) : 0,
-                      minWidth: hasCustomBubble ? math.max(140.0, bubbleSpec?.minWidth ?? 140.0) : 0,
+                      minHeight: hasCustomBubble ? math.max(70.0, bubbleSpec?.minHeight ?? 70.0) : 0,
+                      minWidth: hasCustomBubble ? math.max(150.0, bubbleSpec?.minWidth ?? 150.0) : 0,
                       maxWidth: maxBubbleWidth,
                     ),
                     decoration: BoxDecoration(

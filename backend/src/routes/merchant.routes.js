@@ -1,6 +1,7 @@
 import express from 'express';
 import authenticate from '../middlewares/authenticate.js';
 import requirePermission from '../middlewares/requirePermission.js';
+import idempotency from '../middlewares/idempotency.js';
 import { requireActiveMerchant } from '../middlewares/merchantAuth.js';
 import merchantController from '../controllers/merchant.controller.js';
 
@@ -24,8 +25,9 @@ userMerchantRouter.get('/me/dashboard', authenticate, requireActiveMerchant, mer
 userMerchantRouter.get('/ledger', authenticate, requireActiveMerchant, merchantController.getMerchantLedger);
 userMerchantRouter.get('/usd-balance', authenticate, requireActiveMerchant, merchantController.getMerchantUsdBalance);
 userMerchantRouter.post('/exchange-usd', authenticate, requireActiveMerchant, merchantController.exchangeUsdToCoins);
-userMerchantRouter.post('/recharge', authenticate, requireActiveMerchant, merchantController.executeMerchantRecharge);
+userMerchantRouter.post('/recharge', authenticate, requireActiveMerchant, idempotency, merchantController.executeMerchantRecharge);
 userMerchantRouter.get('/recharge/verify', authenticate, merchantController.verifyMerchantRecharge);
+userMerchantRouter.get('/recharge/status/:id', authenticate, requireActiveMerchant, merchantController.getMerchantRechargeStatus);
 
 export default {
   adminMerchantRouter,

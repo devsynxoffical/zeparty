@@ -1141,6 +1141,38 @@ export async function clearRoomLikes(roomId) {
   }
 }
 
+export async function updateUserFrameInPresence(userId, newFrame) {
+  if (!userId) return;
+  const uId = String(userId);
+  const normalizedFrame = (!newFrame || newFrame === 'none') ? null : newFrame;
+
+  // 1. Update in-memory room presence entries
+  for (const [, userMap] of memoryRoomUsers.entries()) {
+    const entry = userMap.get(uId);
+    if (entry && entry.userInfo) {
+      entry.userInfo.avatarFrame = normalizedFrame;
+      entry.userInfo.equippedFrame = normalizedFrame;
+    }
+  }
+
+  // 2. Update Redis cached room userInfo for the user's active room (if any)
+  if (redisClient.isOpen) {
+    try {
+      const activeRoomId = await getUserActiveRoom(uId);
+      if (activeRoomId) {
+        const infoKey = `presence:room:${activeRoomId}:user:${uId}:info`;
+        const raw = await redisClient.get(infoKey);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          parsed.avatarFrame = normalizedFrame;
+          parsed.equippedFrame = normalizedFrame;
+          await redisClient.set(infoKey, JSON.stringify(parsed), { EX: 86400 });
+        }
+      }
+    } catch (_) {}
+  }
+}
+
 export default {
   registerUserSocket,
   unregisterUserSocket,
@@ -1171,4 +1203,5 @@ export default {
   incrementRoomLikes,
   getRoomLikes,
   clearRoomLikes,
+  updateUserFrameInPresence,
 };

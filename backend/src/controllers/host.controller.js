@@ -291,15 +291,32 @@ export async function applyLiveHost(req, res, next) {
     const {
       name,
       displayName,
+      dob,
+      gender,
+      phone,
+      contentCategory,
+      introduction,
       hostType = 'LIVE_HOST',
       idCardFrontUrl,
       idCardBackUrl,
       videoSampleUrl,
     } = req.body || {};
 
+    const normalizedType = String(hostType || 'LIVE_HOST').toUpperCase().trim();
+    const resolvedHostType = ['LIVE_HOST', 'AUDIO_HOST', 'BOTH'].includes(normalizedType)
+      ? normalizedType
+      : 'LIVE_HOST';
+
     const application = await hostService.applyForHost({
       userId,
-      hostType: hostType === 'AUDIO_HOST' ? 'AUDIO_HOST' : 'LIVE_HOST',
+      hostType: resolvedHostType,
+      name,
+      displayName,
+      dob,
+      gender,
+      phone,
+      contentCategory,
+      introduction,
       idCardFrontUrl: idCardFrontUrl || 'https://assets.zeparty.app/verifications/id_front.jpg',
       idCardBackUrl: idCardBackUrl || 'https://assets.zeparty.app/verifications/id_back.jpg',
       videoSampleUrl: videoSampleUrl || 'https://assets.zeparty.app/verifications/selfie_liveness.mp4',

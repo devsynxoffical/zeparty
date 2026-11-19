@@ -1366,16 +1366,18 @@ export async function getUserNobleHistory(req, res, next) {
 
 export async function postActivateNoble(req, res, next) {
   try {
-    const userId = req.user?.id || req.userId;
-    const { nobleTier, durationDays = 30 } = req.body || {};
+    const userId = req.auth?.userId || req.user?.id || req.userId;
+    const { nobleTier, durationDays = 30, idempotencyKey } = req.body || {};
+    const headerIdempotencyKey = req.headers['idempotency-key'] || req.headers['x-idempotency-key'];
     const result = await nobleService.activateNobleTier(userId, {
       nobleTier,
       durationDays,
       grantType: 'USER_ACTIVATION',
       grantReason: 'User initiated noble activation',
       grantedBy: userId,
+      idempotencyKey: idempotencyKey || headerIdempotencyKey,
     });
-    return res.status(200).json({ success: true, noble: result });
+    return res.status(200).json({ success: true, noble: result, data: result });
   } catch (err) {
     next(err);
   }
@@ -1383,7 +1385,7 @@ export async function postActivateNoble(req, res, next) {
 
 export async function postDeactivateNoble(req, res, next) {
   try {
-    const userId = req.user?.id || req.userId;
+    const userId = req.auth?.userId || req.user?.id || req.userId;
     const { reason = 'User deactivated noble' } = req.body || {};
     const result = await nobleService.revokeActiveNoble(userId, {
       reason,
@@ -1856,6 +1858,39 @@ export async function getUserHonorAssets(req, res, next) {
   }
 }
 
+/**
+ * Bug #15: Authoritative equipped medals endpoint (shared by owner & visitor views)
+ */
+export async function getUserMedals(req, res, next) {
+  try {
+    const targetId = req.params?.id || req.auth?.userId || req.user?.id || req.user?.userId;
+    if (!targetId) {
+      return res.status(400).json({ success: false, message: 'User ID is required' });
+    }
+    const medalState = await userService.getUserEquippedMedals(targetId);
+    return res.status(200).json({
+      success: true,
+      data: medalState,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function putMyMedals(req, res, next) {
+  try {
+    const userId = req.auth?.userId || req.user?.id || req.user?.userId;
+    const medalIds = req.body?.medalIds ?? req.body?.equippedMedalIds ?? [];
+    const medalState = await userService.updateUserEquippedMedals(userId, medalIds);
+    return res.status(200).json({
+      success: true,
+      data: medalState,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function getMySvipStatus(req, res, next) {
   try {
     const userId = req.user?.id || req.user?.userId;
@@ -1877,6 +1912,8 @@ export default {
   postClaimDailyQuest,
   getUserReceivedGifts,
   getUserHonorAssets,
+  getUserMedals,
+  putMyMedals,
   getAdminUsers,
   getAdminUserById,
   patchAdminUserStatus,

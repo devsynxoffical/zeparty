@@ -304,7 +304,10 @@ class _MerchantCenterScreenState extends State<MerchantCenterScreen> with Single
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '${_verifiedRecipient!['displayName']} (@${_verifiedRecipient!['username']})',
+                          _selectedRecipientType == 'Coin Seller Recharge' &&
+                                  (_verifiedRecipient!['businessName']?.toString().isNotEmpty ?? false)
+                              ? '${_verifiedRecipient!['businessName']} (@${_verifiedRecipient!['username']})'
+                              : '${_verifiedRecipient!['displayName']} (@${_verifiedRecipient!['username']})',
                           style: TextStyle(
                             color: AppColors.getTextPrimary(isDark),
                             fontWeight: FontWeight.bold,
@@ -312,9 +315,15 @@ class _MerchantCenterScreenState extends State<MerchantCenterScreen> with Single
                           ),
                         ),
                         Text(
-                          'Verified ${_selectedRecipientType == 'User Recharge' ? 'User' : 'Coin Seller'} • ID: ${_verifiedRecipient!['accountId']}',
+                          'Verified ${_selectedRecipientType == 'User Recharge' ? 'User' : 'Coin Seller'} • ID: ${_verifiedRecipient!['accountId']}'
+                          '${(_verifiedRecipient!['countryName']?.toString().isNotEmpty ?? false) ? ' • ${_verifiedRecipient!['countryName']}' : ''}',
                           style: const TextStyle(color: Colors.greenAccent, fontSize: 11),
                         ),
+                        if (_verifiedRecipient!['targetWallet']?.toString().isNotEmpty ?? false)
+                          Text(
+                            'Target: ${_verifiedRecipient!['targetWallet']}',
+                            style: const TextStyle(color: Colors.amberAccent, fontSize: 10.5, fontWeight: FontWeight.w600),
+                          ),
                       ],
                     ),
                   ),

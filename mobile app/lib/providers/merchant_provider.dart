@@ -1,4 +1,6 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:uuid/uuid.dart';
 import '../core/services/api_client.dart';
 import '../models/merchant_model.dart';
 
@@ -79,6 +81,7 @@ class MerchantProvider extends ChangeNotifier {
     required int coinAmount,
     String pin = '',
   }) async {
+    if (_isLoading) return 'A recharge request is already in progress. Please wait.';
     if (coinAmount <= 0) return 'Invalid coin amount.';
     if (_merchant.availableCoins > 0 && _merchant.availableCoins < coinAmount) {
       return 'Insufficient Merchant Balance.';
@@ -88,20 +91,32 @@ class MerchantProvider extends ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
 
+    final idempotencyKey = const Uuid().v4();
+
     try {
       final response = await ApiClient.instance.post(
         '/v1/merchants/recharge',
         data: {
           'recipientId': recipientId.trim(),
+          'recipientType': recipientType,
           'amountCoins': coinAmount,
+          'idempotencyKey': idempotencyKey,
           'notes': '$recipientType - $recipientName',
         },
+        options: Options(
+          headers: {
+            'Idempotency-Key': idempotencyKey,
+          },
+        ),
       );
 
       if (response.data?['success'] == true) {
         final data = response.data['data'] as Map<String, dynamic>?;
         final remaining = int.tryParse(data?['remainingQuota']?.toString() ?? '') ??
             (_merchant.availableCoins - coinAmount);
+        final txId = data?['transactionId']?.toString() ??
+            data?['referenceId']?.toString() ??
+            'tx_merch_${DateTime.now().millisecondsSinceEpoch}';
 
         _merchant = _merchant.copyWith(
           availableCoins: remaining >= 0 ? remaining : 0,
@@ -115,14 +130,15 @@ class MerchantProvider extends ChangeNotifier {
               : _merchant.sellerRechargeTotal,
         );
 
-        final destType = recipientType == 'User Recharge'
-            ? 'User Wallet'
-            : 'Seller Recharge Operational Balance';
+        final destType = data?['targetWallet']?.toString() ??
+            (recipientType == 'User Recharge'
+                ? 'Personal Coin Wallet'
+                : 'Coin Seller Business Wallet');
 
         _transactions.insert(
           0,
           MerchantTransactionModel(
-            transactionId: 'tx_merch_${DateTime.now().millisecondsSinceEpoch}',
+            transactionId: txId,
             merchantId: _merchant.id,
             recipientType: recipientType,
             recipientId: recipientId,

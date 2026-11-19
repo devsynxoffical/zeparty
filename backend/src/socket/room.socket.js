@@ -259,8 +259,15 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
 
   const existingMemberIds = new Set(membersList.map((m) => m.userId));
 
-  // If host is NOT occupying a seat, ensure host is included in audience exactly once
-  if (!hostIsOccupyingSeat && hostUserId && !existingMemberIds.has(hostUserId)) {
+  // Bug #13: Only include unseated host in audience membersList if host is actually present
+  // in activePresenceUsers or active room.members (never fabricate host in viewers when absent)
+  const hostIsPresentInRoom = Boolean(
+    hostUserId && (
+      (activePresenceUsers || []).some((p) => (p.userId || p.id) === hostUserId) ||
+      (room.members || []).some((m) => (m.userId || m.user?.id) === hostUserId && !m.leftAt)
+    )
+  );
+  if (!hostIsOccupyingSeat && hostUserId && hostIsPresentInRoom && !existingMemberIds.has(hostUserId)) {
     const hostUser = room.creator || {};
     const hostDisplayName = hostUser.profile?.displayName || hostUser.displayName || hostUser.username || 'Host';
     const hostFrame = resolveUserAvatarFrame(hostUser);
@@ -988,14 +995,12 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
         isDebouncedReconnect,
       } : null;
 
-      const joinedFrame = resolveUserAvatarFrame(dbJoinedUser) ||
-        resolveUserAvatarFrame(socket.user) ||
-        resolveUserAvatarFrame(clientUser) ||
-        socket.user?.avatarFrame ||
-        socket.user?.equippedFrame ||
-        clientUser.avatarFrame ||
-        clientUser.equippedFrame ||
-        null;
+      // Authoritative DB frame: if dbJoinedUser was loaded, null means unequipped (do NOT revive stale socket.user frame)
+      const joinedFrame = dbJoinedUser
+        ? resolveUserAvatarFrame(dbJoinedUser)
+        : (resolveUserAvatarFrame(socket.user) ||
+            resolveUserAvatarFrame(clientUser) ||
+            null);
 
       const userPayload = {
         id: entryEventId,
@@ -1043,6 +1048,11 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
         viewerCount: currentCount,
         count: currentCount,
         currentViewersCount: currentCount,
+        // Bug #13: Include authoritative seat & member snapshot on join/rejoin so remote devices
+        // reconcile host/user mic vs viewer state immediately with zero cross-device drift.
+        seats: snapshot.seats || [],
+        members: snapshot.members || [],
+        snapshotRevision: Date.now(),
         timestamp: entryTimestamp,
         isStealth: isStealthEntry,
       };
@@ -1864,11 +1874,11 @@ export async function onSendRoomEmoji(arg1, arg2, arg3, arg4, arg5) {
       (!socket.isGuest ? (socket.user?.avatarUrl || socket.user?.profile?.avatarUrl) : null) ||
       data?.sender?.avatarUrl ||
       null;
-    const senderFrame =
-      resolveUserAvatarFrame(dbSender) ||
-      resolveUserAvatarFrame(socket.user) ||
-      data?.sender?.avatarFrame ||
-      null;
+    const senderFrame = dbSender
+      ? resolveUserAvatarFrame(dbSender)
+      : (resolveUserAvatarFrame(socket.user) ||
+          (data?.sender?.avatarFrame && data.sender.avatarFrame !== 'none' ? data.sender.avatarFrame : null) ||
+          null);
 
     // Resolve seatId / seatIndex if sender is seated or is the room host
     const rawSeatCandidate = data?.seatId ?? data?.seatIndex ?? data?.micIndex;
@@ -1907,8 +1917,17 @@ export async function onSendRoomEmoji(arg1, arg2, arg3, arg4, arg5) {
       isHost: Boolean(room && room.creatorUserId === senderId),
     };
 
+    const clientReactionId =
+      typeof data?.reactionId === 'string' && data.reactionId.trim()
+        ? data.reactionId.trim()
+        : null;
+    const generatedEmojiId = `emoji_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const reactionEventId = clientReactionId || generatedEmojiId;
+
     const payload = {
-      id: `emoji_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      id: reactionEventId,
+      reactionId: reactionEventId,
+      eventId: reactionEventId,
       roomId: canonicalRoomId,
       sessionId: canonicalRoomId,
       clientRoomId: rawRoomId,
@@ -2217,14 +2236,11 @@ export async function onSendRoomChat(arg1, arg2, arg3, arg4, arg5) {
     const senderRole = isHostSender
       ? 'HOST'
       : (dbUser?.userType || socket.user?.role || clientSender.role || 'USER');
-    const senderFrame =
-      resolveUserAvatarFrame(dbUser) ||
-      resolveUserAvatarFrame(socket.user) ||
-      resolveUserAvatarFrame(clientSender) ||
-      socket.user?.avatarFrame ||
-      clientSender.avatarFrame ||
-      clientSender.frameUrl ||
-      null;
+    const senderFrame = dbUser
+      ? resolveUserAvatarFrame(dbUser)
+      : (resolveUserAvatarFrame(socket.user) ||
+          resolveUserAvatarFrame(clientSender) ||
+          null);
     const senderBubble =
       socket.user?.chatBubble ||
       clientSender.chatBubble ||

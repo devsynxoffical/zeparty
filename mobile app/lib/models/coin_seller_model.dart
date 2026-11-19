@@ -44,6 +44,9 @@ class CoinSellerModel {
   final bool isVisible;
   final List<String> paymentMethods;
   final int stockCoins;
+  final String role;
+  final String roleLabel;
+  final String businessName;
 
   const CoinSellerModel({
     required this.id,
@@ -62,9 +65,22 @@ class CoinSellerModel {
     required this.isVisible,
     required this.paymentMethods,
     required this.stockCoins,
+    this.role = 'COIN_SELLER',
+    this.roleLabel = 'Coin Seller',
+    this.businessName = '',
   });
 
-  String get effectiveName => nickname.isNotEmpty ? nickname : name;
+  bool get isMerchant => role.toUpperCase() == 'MERCHANT';
+  String get effectiveName => businessName.isNotEmpty ? businessName : (nickname.isNotEmpty ? nickname : name);
+  String get formattedStock {
+    if (stockCoins >= 1000000) {
+      return '${(stockCoins / 1000000).toStringAsFixed(1)}M';
+    }
+    if (stockCoins >= 1000) {
+      return '${(stockCoins / 1000).toStringAsFixed(1)}K';
+    }
+    return stockCoins.toString();
+  }
   String get effectiveAvatar => profileImage.isNotEmpty ? profileImage : avatarUrl;
   String get effectivePublicId => publicUserId.isNotEmpty ? publicUserId : userId;
 
@@ -137,8 +153,16 @@ class CoinSellerModel {
     final cName = (json['countryName'] ?? json['countryLabel'] ?? json['region'] ?? '').toString();
     final cLabel = (json['countryLabel'] ?? json['countryName'] ?? json['region'] ?? '').toString();
 
-    final rawStock = json['stockCoins'] ?? json['balanceCoins'] ?? json['resellerBalanceCoins'] ?? 0;
+    final rawStock = json['stockCoins'] ??
+        json['availableBalanceCoins'] ??
+        json['balanceCoins'] ??
+        json['resellerBalanceCoins'] ??
+        json['monthlyQuotaCoins'] ??
+        0;
     final parsedStock = int.tryParse(rawStock.toString()) ?? 0;
+    final rawRole = (json['role'] ?? (tStr == 'merchant' ? 'MERCHANT' : 'COIN_SELLER')).toString().toUpperCase();
+    final rawRoleLabel = (json['roleLabel'] ?? json['roleTag'] ?? (rawRole == 'MERCHANT' ? 'Merchant' : 'Coin Seller')).toString();
+    final bName = (json['businessName'] ?? json['companyName'] ?? '').toString();
 
     return CoinSellerModel(
       id: (json['id'] ?? json['sellerId'] ?? json['_id'] ?? '').toString(),
@@ -157,6 +181,9 @@ class CoinSellerModel {
       isVisible: json['isVisible'] ?? true,
       paymentMethods: payments,
       stockCoins: parsedStock,
+      role: rawRole,
+      roleLabel: rawRoleLabel,
+      businessName: bName,
     );
   }
 

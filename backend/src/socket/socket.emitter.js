@@ -251,6 +251,35 @@ export async function clearRoomSockets(roomId) {
   }
 }
 
+export async function syncUserSocketFrame(userId, newFrame) {
+  if (!userId) return;
+  const uId = String(userId);
+  const normalizedFrame = (!newFrame || newFrame === 'none') ? null : newFrame;
+
+  try {
+    await presenceService.updateUserFrameInPresence(uId, normalizedFrame);
+  } catch (_) {}
+
+  if (!ioInstance) return;
+
+  try {
+    if (ioInstance.sockets?.sockets) {
+      for (const [, sock] of ioInstance.sockets.sockets) {
+        if (String(sock.userId || sock.user?.id || '') === uId) {
+          if (sock.user) {
+            sock.user.avatarFrame = normalizedFrame;
+            sock.user.equippedFrame = normalizedFrame;
+          }
+          if (sock.data?.user) {
+            sock.data.user.avatarFrame = normalizedFrame;
+            sock.data.user.equippedFrame = normalizedFrame;
+          }
+        }
+      }
+    }
+  } catch (_) {}
+}
+
 export default {
   setSocketServerInstance,
   getSocketServerInstance,
@@ -261,4 +290,5 @@ export default {
   joinUserSocketsToRoom,
   leaveUserSocketsFromRoom,
   clearRoomSockets,
+  syncUserSocketFrame,
 };

@@ -1,4 +1,6 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:uuid/uuid.dart';
 import '../core/services/api_client.dart';
 import '../models/noble_model.dart';
 import 'wallet_provider.dart';
@@ -205,9 +207,16 @@ class NobleProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  String? _lastError;
+  String? get lastError => _lastError;
+
   Future<bool> activateRank(NobleRank rank, WalletProvider wallet) async {
+    if (_isLoading) return false;
     _isLoading = true;
+    _lastError = null;
     notifyListeners();
+
+    final idempotencyKey = const Uuid().v4();
 
     try {
       final res = await ApiClient.instance.post(
@@ -215,12 +224,23 @@ class NobleProvider extends ChangeNotifier {
         data: {
           'nobleTier': rank.name,
           'durationDays': rank.durationDays > 0 ? rank.durationDays : 30,
+          'idempotencyKey': idempotencyKey,
         },
+        options: Options(
+          headers: {
+            'Idempotency-Key': idempotencyKey,
+          },
+        ),
       );
 
-      if (res.statusCode == 200 || res.statusCode == 201) {
+      if ((res.statusCode == 200 || res.statusCode == 201) && res.data?['success'] == true) {
+        final payload = (res.data?['noble'] ?? res.data?['data']) as Map<String, dynamic>?;
+        final serverExpiry = payload?['expiresAt']?.toString();
         _activeRankId = rank.id;
-        _expiryDate = DateTime.now().add(Duration(days: rank.durationDays > 0 ? rank.durationDays : 30));
+        _expiryDate = (serverExpiry != null && serverExpiry.isNotEmpty)
+            ? (DateTime.tryParse(serverExpiry) ??
+                DateTime.now().add(Duration(days: rank.durationDays > 0 ? rank.durationDays : 30)))
+            : DateTime.now().add(Duration(days: rank.durationDays > 0 ? rank.durationDays : 30));
         await wallet.fetchWallet();
 
         _auditHistory.insert(0, NobleAuditRecord(
@@ -234,8 +254,11 @@ class NobleProvider extends ChangeNotifier {
         _isLoading = false;
         notifyListeners();
         return true;
+      } else {
+        _lastError = res.data?['message']?.toString() ?? 'Failed to activate ${rank.name}';
       }
     } catch (e) {
+      _lastError = e is ApiException ? e.message : e.toString();
       debugPrint('[NobleProvider] Error activating noble rank: $e');
     }
 

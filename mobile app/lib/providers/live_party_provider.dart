@@ -673,10 +673,19 @@ class LivePartyProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool _isSpeakerToggleInFlight = false;
+
   Future<void> toggleSpeakerOutput() async {
+    if (_isSpeakerToggleInFlight) return;
+    _isSpeakerToggleInFlight = true;
     _isSpeakerMuted = !_isSpeakerMuted;
-    await _agoraService.muteAllRemoteAudio(_isSpeakerMuted);
     notifyListeners();
+    try {
+      await _agoraService.muteAllRemoteAudio(_isSpeakerMuted);
+    } finally {
+      _isSpeakerToggleInFlight = false;
+      notifyListeners();
+    }
   }
 
   Future<void> initialize() async {
@@ -1221,7 +1230,9 @@ class LivePartyProvider extends ChangeNotifier {
           registerAgoraUidMapping(hostAgoraUid ?? deriveAgoraUid(hostId), hostId);
         }
 
+        final hasAuthoritativeSeats = data['seats'] is List || roomObj['seats'] is List;
         final seatsList = data['seats'] is List ? (data['seats'] as List) : (roomObj['seats'] is List ? (roomObj['seats'] as List) : []);
+        final authoritativeSeatOccupants = <int, String>{};
         for (final seatRaw in seatsList) {
           if (seatRaw is! Map) continue;
           final seatMap = Map<String, dynamic>.from(seatRaw);
@@ -1229,6 +1240,7 @@ class LivePartyProvider extends ChangeNotifier {
           final userRaw = seatMap['user'] ?? seatMap['occupiedUser'];
           if (seatIndex != null) {
             if (userRaw is Map && userRaw['id'] != null && userRaw['id'].toString().isNotEmpty) {
+              authoritativeSeatOccupants[seatIndex] = userRaw['id'].toString();
               final userMap = Map<String, dynamic>.from(userRaw);
               final rawId = userMap['id']?.toString() ?? userMap['_id']?.toString() ?? '';
               final rawUsername = userMap['username']?.toString() ?? 'User';
@@ -1293,6 +1305,26 @@ class LivePartyProvider extends ChangeNotifier {
                     occupant.user.id == _activeRoom?.creatorUserId ||
                     (isHost && occupant.user.id == _currentUser?.id);
                 _participants[emptySeatOccupant] = occupant.copyWith(
+                  clearSeat: true,
+                  role: isHostOccupant ? ParticipantRole.host : ParticipantRole.listener,
+                  micStatus: MicStatus.muted,
+                );
+              }
+            }
+          }
+        }
+        // Bug #13: Reconcile any stale/ghost local seats against the authoritative server snapshot
+        if (hasAuthoritativeSeats) {
+          for (int i = 0; i < _participants.length; i++) {
+            final p = _participants[i];
+            if (p.seatNumber != null) {
+              final expectedUserId = authoritativeSeatOccupants[p.seatNumber!];
+              if (expectedUserId != p.user.id) {
+                final isHostOccupant = p.role == ParticipantRole.host ||
+                    p.user.id == _activeRoom?.host.id ||
+                    p.user.id == _activeRoom?.creatorUserId ||
+                    (isHost && p.user.id == _currentUser?.id);
+                _participants[i] = p.copyWith(
                   clearSeat: true,
                   role: isHostOccupant ? ParticipantRole.host : ParticipantRole.listener,
                   micStatus: MicStatus.muted,
@@ -1433,6 +1465,36 @@ class LivePartyProvider extends ChangeNotifier {
     _socketPresenceSyncSub = _socketService.onRoomPresenceSync.listen((data) {
       if (!matchesCurrentRoom(data)) return;
       try {
+        // Bug #13: Reconcile authoritative seats bundled on room:user_joined (e.g. host rejoin)
+        // so remote devices never retain a ghost mic seat while the returning host is unseated.
+        if (data['seats'] is List) {
+          final joinedSeats = data['seats'] as List;
+          final authoritativeSeats = <int, String>{};
+          for (final seatRaw in joinedSeats) {
+            if (seatRaw is! Map) continue;
+            final rawIdx = seatRaw['seatIndex'] ?? seatRaw['seatNumber'];
+            final seatIdx = (rawIdx is num) ? rawIdx.toInt() : int.tryParse(rawIdx?.toString() ?? '');
+            final seatUser = seatRaw['user'] ?? seatRaw['occupiedUser'];
+            if (seatIdx != null && seatUser is Map && seatUser['id'] != null && seatUser['id'].toString().isNotEmpty) {
+              authoritativeSeats[seatIdx] = seatUser['id'].toString();
+            }
+          }
+          for (int i = 0; i < _participants.length; i++) {
+            final p = _participants[i];
+            if (p.seatNumber != null && authoritativeSeats[p.seatNumber!] != p.user.id) {
+              final isHostParticipant = p.role == ParticipantRole.host ||
+                  p.user.id == _activeRoom?.host.id ||
+                  p.user.id == _activeRoom?.creatorUserId;
+              _participants[i] = p.copyWith(
+                clearSeat: true,
+                role: isHostParticipant ? ParticipantRole.host : ParticipantRole.listener,
+                micStatus: MicStatus.muted,
+              );
+            }
+          }
+          _deduplicateParticipants();
+        }
+
         final rawCount = data['viewerCount'] ?? data['count'] ?? data['currentViewersCount'];
         final parsedCount = (rawCount is num) ? rawCount.toInt() : int.tryParse(rawCount?.toString() ?? '');
         if (parsedCount != null && _activeRoom != null) {
@@ -1694,6 +1756,36 @@ class LivePartyProvider extends ChangeNotifier {
           }
         }
 
+        // Bug #13: Reconcile authoritative seats bundled on room:user_joined (e.g. host rejoin)
+        // so remote devices never retain a ghost mic seat while the returning host is unseated.
+        if (data['seats'] is List) {
+          final joinedSeats = data['seats'] as List;
+          final authoritativeSeats = <int, String>{};
+          for (final seatRaw in joinedSeats) {
+            if (seatRaw is! Map) continue;
+            final rawIdx = seatRaw['seatIndex'] ?? seatRaw['seatNumber'];
+            final seatIdx = (rawIdx is num) ? rawIdx.toInt() : int.tryParse(rawIdx?.toString() ?? '');
+            final seatUser = seatRaw['user'] ?? seatRaw['occupiedUser'];
+            if (seatIdx != null && seatUser is Map && seatUser['id'] != null && seatUser['id'].toString().isNotEmpty) {
+              authoritativeSeats[seatIdx] = seatUser['id'].toString();
+            }
+          }
+          for (int i = 0; i < _participants.length; i++) {
+            final p = _participants[i];
+            if (p.seatNumber != null && authoritativeSeats[p.seatNumber!] != p.user.id) {
+              final isHostParticipant = p.role == ParticipantRole.host ||
+                  p.user.id == _activeRoom?.host.id ||
+                  p.user.id == _activeRoom?.creatorUserId;
+              _participants[i] = p.copyWith(
+                clearSeat: true,
+                role: isHostParticipant ? ParticipantRole.host : ParticipantRole.listener,
+                micStatus: MicStatus.muted,
+              );
+            }
+          }
+          _deduplicateParticipants();
+        }
+
         final rawCount = data['viewerCount'] ?? data['count'] ?? data['currentViewersCount'];
         final parsedViewerCount = (rawCount is num) ? rawCount.toInt() : int.tryParse(rawCount?.toString() ?? '');
         final currentAudienceCount = _participants.where((p) => p.role != ParticipantRole.host && p.user.id != _activeRoom?.host.id && p.user.id != _activeRoom?.creatorUserId).length;
@@ -1782,6 +1874,36 @@ class LivePartyProvider extends ChangeNotifier {
             p.user.id == leftUserId ||
             p.user.id.toLowerCase() == leftIdLower ||
             p.user.id.toLowerCase().replaceFirst(RegExp(r'^user_'), '') == leftIdClean);
+
+        // Bug #13: Reconcile authoritative seats bundled on room:user_joined (e.g. host rejoin)
+        // so remote devices never retain a ghost mic seat while the returning host is unseated.
+        if (data['seats'] is List) {
+          final joinedSeats = data['seats'] as List;
+          final authoritativeSeats = <int, String>{};
+          for (final seatRaw in joinedSeats) {
+            if (seatRaw is! Map) continue;
+            final rawIdx = seatRaw['seatIndex'] ?? seatRaw['seatNumber'];
+            final seatIdx = (rawIdx is num) ? rawIdx.toInt() : int.tryParse(rawIdx?.toString() ?? '');
+            final seatUser = seatRaw['user'] ?? seatRaw['occupiedUser'];
+            if (seatIdx != null && seatUser is Map && seatUser['id'] != null && seatUser['id'].toString().isNotEmpty) {
+              authoritativeSeats[seatIdx] = seatUser['id'].toString();
+            }
+          }
+          for (int i = 0; i < _participants.length; i++) {
+            final p = _participants[i];
+            if (p.seatNumber != null && authoritativeSeats[p.seatNumber!] != p.user.id) {
+              final isHostParticipant = p.role == ParticipantRole.host ||
+                  p.user.id == _activeRoom?.host.id ||
+                  p.user.id == _activeRoom?.creatorUserId;
+              _participants[i] = p.copyWith(
+                clearSeat: true,
+                role: isHostParticipant ? ParticipantRole.host : ParticipantRole.listener,
+                micStatus: MicStatus.muted,
+              );
+            }
+          }
+          _deduplicateParticipants();
+        }
 
         final rawCount = data['viewerCount'] ?? data['count'] ?? data['currentViewersCount'];
         final parsedViewerCount = (rawCount is num) ? rawCount.toInt() : int.tryParse(rawCount?.toString() ?? '');
@@ -3380,27 +3502,21 @@ class LivePartyProvider extends ChangeNotifier {
     // Clean up any old Guest placeholder entries
     _participants.removeWhere((p) => p.user.id.startsWith('agora_') || p.user.name.startsWith('Guest '));
 
-    // 1. Proactively vacate ANY previous seat held by actor elsewhere across ALL participant entries
+    // 1. Detect if actor is switching directly from another mic seat (Bug #11: atomic seat-to-seat move)
+    int? previousSeatIndex;
+    MicStatus? previousMicStatus;
     for (int i = 0; i < _participants.length; i++) {
       final p = _participants[i];
       final isActorMatch = p.user.id == actor.id ||
           (actor.username.isNotEmpty && p.user.username.isNotEmpty && p.user.username.toLowerCase() == actor.username.toLowerCase()) ||
           (actor.name.isNotEmpty && p.user.name.isNotEmpty && p.user.name.toLowerCase() == actor.name.toLowerCase());
       if (isActorMatch && p.seatNumber != null && p.seatNumber != seatIndex) {
-        final oldSeat = p.seatNumber!;
-        try {
-          await _roomRepository.leaveSeat(_activeRoom!.id, oldSeat);
-        } catch (_) {}
-        try {
-          _socketService.leaveSeat(_activeRoom!.id, oldSeat);
-        } catch (_) {}
-        _participants[i] = p.copyWith(
-          clearSeat: true,
-          role: (p.role == ParticipantRole.host || isHostActor) ? ParticipantRole.host : ParticipantRole.listener,
-          micStatus: MicStatus.muted,
-        );
+        previousSeatIndex = p.seatNumber;
+        previousMicStatus = p.micStatus;
+        break;
       }
     }
+    final bool isSeatSwitch = previousSeatIndex != null;
 
     // 2. Proactively vacate ANY other participant who was previously sitting on seatIndex
     for (int i = 0; i < _participants.length; i++) {
@@ -3421,19 +3537,25 @@ class LivePartyProvider extends ChangeNotifier {
       }
     }
 
+    // Atomic occupySeat: backend occupySeatTx moves actor from previousSeatIndex -> seatIndex
+    // without emitting seat_released or passing through viewer state.
+    try {
+      await _roomRepository.occupySeat(_activeRoom!.id, seatIndex);
+    } catch (e) {
+      debugPrint('[LivePartyProvider] Backend REST occupySeat notice: $e');
+      if (isSeatSwitch) {
+        // Keep actor safely on previousSeatIndex if target seat move failed
+        return 'Unable to switch to $seatLabel right now.';
+      }
+    }
+
     try {
       _socketService.occupySeat(_activeRoom!.id, seatIndex, user: actor.toJson());
     } catch (e) {
       debugPrint('[LivePartyProvider] Socket occupySeat notice: $e');
     }
 
-    try {
-      await _roomRepository.occupySeat(_activeRoom!.id, seatIndex);
-    } catch (e) {
-      debugPrint('[LivePartyProvider] Backend REST occupySeat notice: $e');
-    }
-
-    // Update local state with real user object
+    // Update local state directly (atomic seat A -> seat B without clearing seat or dropping to viewer)
     final existingIdx = _participants.indexWhere(
       (p) => p.user.id == actor.id ||
              (actor.username.isNotEmpty && p.user.username.toLowerCase() == actor.username.toLowerCase()) ||
@@ -3447,31 +3569,42 @@ class LivePartyProvider extends ChangeNotifier {
       currentRole: currentRole,
       isSeated: true,
     );
+    final preservedMicStatus = isSeatSwitch
+        ? (previousMicStatus ?? (_isLocalSelfMuted ? MicStatus.muted : MicStatus.on))
+        : MicStatus.on;
 
     if (existingIdx != -1) {
       _participants[existingIdx] = _participants[existingIdx].copyWith(
         user: actor,
         seatNumber: seatIndex,
         role: resolvedRole,
-        micStatus: MicStatus.on,
+        micStatus: preservedMicStatus,
       );
     } else {
       _participants.add(PartyParticipantModel(
         user: actor,
         role: resolvedRole,
         seatNumber: seatIndex,
-        micStatus: MicStatus.on,
+        micStatus: preservedMicStatus,
         joinedAt: DateTime.now(),
       ));
     }
 
-    // Promote Agora Role to Broadcaster and unmute local audio if actor is current user (Fix 31.1)
+    // Promote Agora Role to Broadcaster if joining mic from audience; preserve mute/audio state on seat switch
     if (actor.id == _currentUser?.id) {
-      _isLocalSelfMuted = false;
-      try {
-        await _agoraService.switchRole(isHost: true);
-        await _agoraService.muteLocalAudio(false);
-      } catch (_) {}
+      if (!isSeatSwitch) {
+        _isLocalSelfMuted = false;
+        try {
+          await _agoraService.switchRole(isHost: true);
+          await _agoraService.muteLocalAudio(false);
+        } catch (_) {}
+      } else {
+        // Ensure broadcaster role stays active without interrupting existing audio/mute preference
+        try {
+          await _agoraService.switchRole(isHost: true);
+          await _agoraService.muteLocalAudio(_isLocalSelfMuted);
+        } catch (_) {}
+      }
     }
 
     final seatName = formatSeatLabel(seatIndex);
@@ -3480,8 +3613,8 @@ class LivePartyProvider extends ChangeNotifier {
       actorId: actor.id,
       actorRole: _getRoleString(actor.id),
       targetId: actor.id,
-      action: 'TAKE_MIC',
-      previousState: 'Audience',
+      action: isSeatSwitch ? 'SWITCH_MIC' : 'TAKE_MIC',
+      previousState: isSeatSwitch ? formatSeatLabel(previousSeatIndex) : 'Audience',
       newState: seatName,
     );
 

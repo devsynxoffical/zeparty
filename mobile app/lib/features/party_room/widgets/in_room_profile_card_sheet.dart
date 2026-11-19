@@ -374,13 +374,7 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                                 showVipFrame: user.isVip,
                                 frameAsset: (user.avatarFrame.isNotEmpty && user.avatarFrame != 'none')
                                     ? user.avatarFrame
-                                    : NobleBadgeHelper.getFrameAsset(
-                                        user.hasActiveNoble
-                                            ? user.nobleTitle
-                                            : (user.svipLevel > 0
-                                                ? 'SVIP ${user.svipLevel}'
-                                                : user.role.name),
-                                      ),
+                                    : null,
                               ),
                             ],
                           ),

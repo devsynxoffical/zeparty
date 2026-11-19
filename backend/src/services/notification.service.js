@@ -292,6 +292,8 @@ export async function sendRechargeNotification(
     sellerUserId = null,
     sellerName,
     sellerPublicId,
+    senderRole = null,
+    targetWallet = null,
     amountCoins,
     transactionId,
     timestamp = new Date(),
@@ -314,12 +316,18 @@ export async function sendRechargeNotification(
 
   const cleanSellerName = (sellerName && String(sellerName).trim()) || 'Authorized Seller';
   const cleanSellerPublicId = (sellerPublicId && String(sellerPublicId).trim()) || 'Unknown';
+  const cleanRole = senderRole && String(senderRole).trim() ? String(senderRole).trim() : null;
   const formattedCoins = formatCoins(amountCoins);
+  const tsIso = (timestamp instanceof Date ? timestamp : new Date(timestamp)).toISOString();
 
-  // Exact required message format:
-  // "[Seller Name] (ID: [Seller ID]) has recharged [Amount] coins to your account. Transaction ID: [Transaction ID]."
-  const title = 'Coins Recharged';
-  const body = `${cleanSellerName} (ID: ${cleanSellerPublicId}) has recharged ${formattedCoins} coins to your account. Transaction ID: ${transactionId}.`;
+  // Official receipt message format (backwards-compatible when senderRole is not passed)
+  const isSellerWallet = targetWallet && String(targetWallet).toLowerCase().includes('seller');
+  const title = cleanRole
+    ? (isSellerWallet ? 'Coin Seller Recharge Successful' : 'Recharge Successful')
+    : 'Coins Recharged';
+  const body = cleanRole
+    ? `You received ${formattedCoins} coins from ${cleanSellerName} (${cleanRole}).${targetWallet ? ` Credited to: ${targetWallet}.` : ''} Sender ID: ${cleanSellerPublicId}. Transaction ID: ${transactionId}. Status: Successful.`
+    : `${cleanSellerName} (ID: ${cleanSellerPublicId}) has recharged ${formattedCoins} coins to your account. Transaction ID: ${transactionId}.`;
 
   const lockKey = `${recipientId}:RECHARGE:${transactionId}`;
   if (inflightRechargeLocks.has(lockKey)) {
@@ -397,8 +405,11 @@ export async function sendRechargeNotification(
           sellerUserId: sellerUserId || null,
           sellerPublicId: cleanSellerPublicId,
           sellerName: cleanSellerName,
+          senderRole: cleanRole || 'Coin Seller',
+          targetWallet: targetWallet || 'Personal Coin Wallet',
+          status: 'Successful',
           recipientUserId: recipientId,
-          createdAt: (timestamp instanceof Date ? timestamp : new Date(timestamp)).toISOString(),
+          createdAt: tsIso,
         },
         sourceType: 'RECHARGE',
         sourceId: transactionId,

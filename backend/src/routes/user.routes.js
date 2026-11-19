@@ -1,5 +1,6 @@
 import express from 'express';
 import authenticate from '../middlewares/authenticate.js';
+import idempotency from '../middlewares/idempotency.js';
 import requirePermission from '../middlewares/requirePermission.js';
 import userController from '../controllers/user.controller.js';
 import socialController from '../controllers/social.controller.js';
@@ -105,7 +106,7 @@ userProfileRouter.get('/noble-palette', userController.getNoblePalette);
 // Noble Single-Active Routes (User)
 userProfileRouter.get('/noble/active', authenticate, userController.getUserActiveNoble);
 userProfileRouter.get('/noble/history', authenticate, userController.getUserNobleHistory);
-userProfileRouter.post('/noble/activate', authenticate, userController.postActivateNoble);
+userProfileRouter.post('/noble/activate', authenticate, idempotency, userController.postActivateNoble);
 userProfileRouter.post('/noble/deactivate', authenticate, userController.postDeactivateNoble);
 
 userProfileRouter.get('/wealth-schedule', userController.getAdminWealthSchedule);
@@ -125,6 +126,8 @@ userProfileRouter.post('/me/quests/claim', authenticate, userController.postClai
 userProfileRouter.post('/me/quests/:questId/claim', authenticate, userController.postClaimDailyQuest);
 userProfileRouter.get('/me/privacy-settings', authenticate, userController.getUserPrivacySettings);
 userProfileRouter.put('/me/privacy-settings', authenticate, userController.putUserPrivacySettings);
+userProfileRouter.get('/me/medals', authenticate, userController.getUserMedals);
+userProfileRouter.put('/me/medals', authenticate, userController.putMyMedals);
 userProfileRouter.get('/me/visitors', authenticate, socialController.getProfileVisitors);
 userProfileRouter.get('/me/visited', authenticate, socialController.getProfileVisited);
 userProfileRouter.get('/me/rooms', authenticate, roomController.getUserJoinedRooms);
@@ -143,6 +146,7 @@ userProfileRouter.get('/:id/card', optionalAuthenticate, userController.getRoomU
 userProfileRouter.get('/:id/level-strip', optionalAuthenticate, userController.getUserLevelStrip);
 userProfileRouter.get('/:id/received-gifts', optionalAuthenticate, userController.getUserReceivedGifts);
 userProfileRouter.get('/:id/honor-assets', optionalAuthenticate, userController.getUserHonorAssets);
+userProfileRouter.get('/:id/medals', optionalAuthenticate, userController.getUserMedals);
 
 // Social, Follows, Followers, Visitors, & Blocks (mounted directly on /users/:id)
 userProfileRouter.get('/:id/social-profile', optionalAuthenticate, socialController.getSocialProfile);

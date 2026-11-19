@@ -152,75 +152,26 @@ export async function verifyMerchantRecharge(req, res, next) {
   try {
     const { type = 'USER', id, userId } = req.query;
     const targetId = (id || userId || '').trim();
-    if (!targetId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Recipient ID or identifier is required',
-        error: { code: 'INVALID_RECIPIENT_ID' },
-      });
-    }
+    const merchantUserId = req.auth?.userId || null;
 
-    const clean = targetId.replace('@', '');
-    const user = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { id: clean },
-          { username: { equals: clean, mode: 'insensitive' } },
-          { phone: clean },
-        ],
-      },
-      include: { profile: true },
+    const data = await merchantService.verifyMerchantRechargeRecipient({
+      merchantUserId,
+      type,
+      targetId,
     });
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: `Recipient user not found for identifier '${clean}'`,
-        error: { code: 'USER_NOT_FOUND' },
-      });
-    }
-
-    if (user.status === 'DELETED' || user.status === 'BANNED') {
-      return res.status(400).json({
-        success: false,
-        message: `Account is inactive or suspended.`,
-        error: { code: 'USER_INACTIVE' },
-      });
-    }
-
-    const isSellerTarget = String(type || '').toUpperCase().includes('SELLER');
-    if (isSellerTarget && user.userType !== 'SELLER') {
-      return res.status(400).json({
-        success: false,
-        message: `User '${user.username}' (${user.id}) is not an authorized Coin Seller account.`,
-        error: { code: 'NOT_A_COIN_SELLER' },
-      });
-    }
-
-    const nickname = (user.profile?.displayName && user.profile.displayName.trim())
-      ? user.profile.displayName.trim()
-      : user.username;
-    const profileImage = user.avatarUrl || null;
 
     return res.status(200).json({
       success: true,
-      data: {
-        accountId: user.id,
-        publicUserId: user.username,
-        nickname,
-        profileImage,
-        recipientType: type || 'USER',
-        recipientId: user.id,
-        username: user.username,
-        name: nickname,
-        displayName: nickname,
-        avatarUrl: profileImage,
-        countryCode: user.countryCode,
-        status: user.status,
-        isVerified: user.status === 'ACTIVE',
-      },
+      data,
     });
   } catch (err) {
+    if (err.statusCode && err.statusCode < 500) {
+      return res.status(err.statusCode).json({
+        success: false,
+        message: err.message,
+        error: { code: err.code || 'VERIFICATION_FAILED' },
+      });
+    }
     next(err);
   }
 }
@@ -304,14 +255,25 @@ export async function executeMerchantRecharge(req, res, next) {
       });
     }
 
-    const { recipientId, amountCoins, amount, coins, notes, idempotencyKey } = req.body;
+    const {
+      recipientId,
+      userId: bodyUserId,
+      recipientType,
+      type,
+      amountCoins,
+      amount,
+      coins,
+      notes,
+      idempotencyKey,
+    } = req.body || {};
     const headerIdempotencyKey = req.headers['idempotency-key'] || req.headers['x-idempotency-key'];
     const ipAddress = req.ip || req.headers['x-forwarded-for'];
 
     const result = await merchantService.executeMerchantRecharge(
       userId,
       {
-        recipientId,
+        recipientId: recipientId || bodyUserId,
+        recipientType: recipientType || type,
         amountCoins: amountCoins || amount || coins,
         notes,
         idempotencyKey: idempotencyKey || headerIdempotencyKey,
@@ -338,6 +300,25 @@ export async function executeMerchantRecharge(req, res, next) {
       message: 'Recharge failed due to a server error. Balances were not deducted. Please try again.',
       error: { code: 'RECHARGE_FAILED' },
     });
+  }
+}
+
+export async function getMerchantRechargeStatus(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+        error: { code: 'UNAUTHORIZED' },
+      });
+    }
+
+    const { id } = req.params;
+    const result = await merchantService.getMerchantRechargeStatus(id, userId);
+    return res.status(result.found ? 200 : 404).json(result);
+  } catch (err) {
+    next(err);
   }
 }
 
@@ -418,6 +399,7 @@ export default {
   getMerchantDashboard,
   getMerchantLedger,
   executeMerchantRecharge,
+  getMerchantRechargeStatus,
   getMerchantUsdBalance,
   exchangeUsdToCoins,
 };

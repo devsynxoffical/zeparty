@@ -319,16 +319,7 @@ class _RechargeAgencyScreenState extends State<RechargeAgencyScreen> with Ticker
             ),
             const SizedBox(height: 16),
 
-            // Step 4 & 5: Enter Amount & Summary
-            TextField(
-              controller: _coinsController,
-              keyboardType: TextInputType.number,
-              style: TextStyle(color: AppColors.getTextPrimary(isDark)),
-              decoration: const InputDecoration(labelText: 'Coin Amount to Recharge', border: OutlineInputBorder()),
-            ),
-            const SizedBox(height: 14),
-
-            // Step 4: Enter Coin Amount
+            // Step 4: Enter Coin Amount (single validated source of truth)
             TextField(
               controller: _coinsController,
               keyboardType: TextInputType.number,

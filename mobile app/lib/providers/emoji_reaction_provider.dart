@@ -104,7 +104,8 @@ class EmojiReactionProvider extends ChangeNotifier {
         final senderName = (senderMap['displayName'] ?? senderMap['name'] ?? senderMap['username'] ?? data['senderName'])?.toString();
         final senderAvatar = (senderMap['avatarUrl'] ?? senderMap['avatar'] ?? data['senderAvatar'])?.toString();
         final emoji = (data['emoji'] ?? data['reaction'] ?? '').toString();
-        final reactionId = data['id']?.toString() ?? 'remote_${DateTime.now().millisecondsSinceEpoch}';
+        final reactionId = (data['reactionId'] ?? data['eventId'] ?? data['id'])?.toString() ??
+            'remote_${DateTime.now().millisecondsSinceEpoch}_${senderId.hashCode.abs()}';
         final targetUserId = data['targetUserId']?.toString();
         final rawSeat = data['seatIndex'] ?? data['seatId'];
         final seatId = rawSeat is num
@@ -144,6 +145,19 @@ class EmojiReactionProvider extends ChangeNotifier {
   }
 
   GlobalKey? getAnchorKey(String keyId) => _anchorKeys[keyId];
+
+  /// Returns the shortestSide (diameter) of the registered anchor widget, used to scale
+  /// seat-anchored emoji reactions to match the local mic avatar DP size (Bug #12).
+  double? getAnchorSize(String keyId) {
+    final key = _anchorKeys[keyId];
+    if (key == null || key.currentContext == null) return null;
+
+    final renderBox = key.currentContext!.findRenderObject() as RenderBox?;
+    if (renderBox == null || !renderBox.attached) return null;
+
+    final diameter = renderBox.size.shortestSide;
+    return diameter > 0 ? diameter : null;
+  }
 
   Offset? getAnchorPosition(String keyId, {Offset? overlayOrigin}) {
     final key = _anchorKeys[keyId];

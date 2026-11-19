@@ -44,14 +44,102 @@ async function logAudit({ adminId, adminName, action, targetEntity, targetEntity
   }
 }
 
-export async function applyForHost({ userId, hostType, idCardFrontUrl, idCardBackUrl, videoSampleUrl, ipAddress }, db = prisma) {
-  const normalizedHostType = hostType ? hostType.toUpperCase() : 'LIVE_HOST';
+export async function applyForHost(
+  {
+    userId,
+    hostType,
+    name,
+    displayName,
+    dob,
+    gender,
+    phone,
+    contentCategory,
+    introduction,
+    idCardFrontUrl,
+    idCardBackUrl,
+    videoSampleUrl,
+    ipAddress,
+  },
+  db = prisma
+) {
+  const normalizedHostType = hostType ? String(hostType).toUpperCase().trim() : 'LIVE_HOST';
+  if (!['LIVE_HOST', 'AUDIO_HOST', 'BOTH'].includes(normalizedHostType)) {
+    const error = new Error('Invalid hostType. Must be LIVE_HOST, AUDIO_HOST, or BOTH.');
+    error.statusCode = 400;
+    error.code = 'INVALID_HOST_TYPE';
+    throw error;
+  }
+
+  // Validate optional identity fields (DOB / age >= 18 and gender)
+  let computedAge = null;
+  if (dob !== undefined && dob !== null && String(dob).trim() !== '') {
+    const parsedDob = new Date(String(dob).trim());
+    if (Number.isNaN(parsedDob.getTime())) {
+      const error = new Error('Invalid date of birth format. Use YYYY-MM-DD.');
+      error.statusCode = 400;
+      error.code = 'INVALID_DOB';
+      throw error;
+    }
+    const now = new Date();
+    let age = now.getUTCFullYear() - parsedDob.getUTCFullYear();
+    const monthDiff = now.getUTCMonth() - parsedDob.getUTCMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && now.getUTCDate() < parsedDob.getUTCDate())) {
+      age -= 1;
+    }
+    if (age < 18 || age > 100) {
+      const error = new Error('Applicants must be at least 18 years old to apply as a Live Host.');
+      error.statusCode = 400;
+      error.code = 'UNDERAGE_APPLICANT';
+      throw error;
+    }
+    computedAge = age;
+  }
+
+  let normalizedGender = null;
+  if (gender !== undefined && gender !== null && String(gender).trim() !== '') {
+    const g = String(gender).trim().toUpperCase();
+    if (!['MALE', 'FEMALE', 'OTHER'].includes(g)) {
+      const error = new Error('Invalid gender value. Permitted values: Male, Female, Other.');
+      error.statusCode = 400;
+      error.code = 'INVALID_GENDER';
+      throw error;
+    }
+    normalizedGender = g;
+  }
+
   const requestedAction = normalizedHostType === 'AUDIO_HOST' ? 'JOIN_AUDIO_HOST' : 'APPLY_LIVE_HOST';
 
   // Atomic transactional eligibility validation with PostgreSQL row lock
   return await db.$transaction(async (tx) => {
     // Shared Server-Side Eligibility Validator
     await validateHostingEligibility(userId, requestedAction, tx, { lockRow: true });
+
+    // Persist validated identity updates to UserProfile when supplied
+    const profileUpdate = {};
+    if (displayName && String(displayName).trim()) {
+      profileUpdate.displayName = String(displayName).trim();
+    } else if (name && String(name).trim()) {
+      profileUpdate.displayName = String(name).trim();
+    }
+    if (normalizedGender) profileUpdate.gender = normalizedGender;
+    if (computedAge !== null) profileUpdate.age = computedAge;
+    if (introduction && String(introduction).trim()) {
+      profileUpdate.bio = String(introduction).trim();
+    }
+
+    if (Object.keys(profileUpdate).length > 0 && tx.userProfile?.upsert) {
+      await tx.userProfile.upsert({
+        where: { userId },
+        update: profileUpdate,
+        create: {
+          userId,
+          displayName: profileUpdate.displayName || 'User',
+          ...(normalizedGender ? { gender: normalizedGender } : {}),
+          ...(computedAge !== null ? { age: computedAge } : {}),
+          ...(profileUpdate.bio ? { bio: profileUpdate.bio } : {}),
+        },
+      }).catch(() => {});
+    }
 
     const application = await hostRepository.createApplication(
       {
@@ -71,7 +159,13 @@ export async function applyForHost({ userId, hostType, idCardFrontUrl, idCardBac
         action: 'HOST_APPLICATION_SUBMITTED',
         targetEntity: 'HostApplication',
         targetEntityId: application.id,
-        afterStateJson: { hostType: normalizedHostType, status: 'APPLIED' },
+        afterStateJson: {
+          hostType: normalizedHostType,
+          status: 'APPLIED',
+          ...(normalizedGender ? { gender: normalizedGender } : {}),
+          ...(computedAge !== null ? { age: computedAge } : {}),
+          ...(contentCategory ? { contentCategory } : {}),
+        },
         ipAddress,
       },
       tx

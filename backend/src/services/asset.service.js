@@ -2,7 +2,7 @@ import prisma from '../config/database.js';
 import assetRepository from '../repositories/asset.repository.js';
 import userAssetRepository from '../repositories/userAsset.repository.js';
 import redisProxy from '../config/redis.js';
-import { emitToUser, broadcastGlobal } from '../socket/socket.emitter.js';
+import { emitToUser, broadcastGlobal, syncUserSocketFrame } from '../socket/socket.emitter.js';
 import {
   isRestrictedSpecialAsset,
   isPublicStoreItem,
@@ -936,6 +936,7 @@ export async function equipAsset(userId, userAssetId, { ipAddress } = {}, db = p
     };
     emitToUser(userId, 'user:outfit_updated', assignedOutfitPayload);
     if (itemType === 'FRAME') {
+      await syncUserSocketFrame(userId, matchedItem.asset);
       broadcastGlobal('room:user_frame_updated', assignedOutfitPayload);
     }
 
@@ -1043,6 +1044,7 @@ export async function equipAsset(userId, userAssetId, { ipAddress } = {}, db = p
       };
       emitToUser(userId, 'user:outfit_updated', outfitPayload);
       if (assetType === 'FRAME') {
+        await syncUserSocketFrame(userId, frameUrl);
         broadcastGlobal('room:user_frame_updated', outfitPayload);
       }
     }
@@ -1142,6 +1144,7 @@ export async function unequipAsset(userId, userAssetId, { ipAddress } = {}, db =
     if (userId) {
       emitToUser(userId, 'user:outfit_updated', unequipPayload);
       if (assetType === 'FRAME') {
+        await syncUserSocketFrame(userId, null);
         broadcastGlobal('room:user_frame_updated', unequipPayload);
       }
     }

@@ -326,12 +326,42 @@ class _AgencyRechargeScreenState extends State<AgencyRechargeScreen> {
                       ],
                     ),
                     const SizedBox(height: 2),
-                    Text(
-                      'ID: $displayPublicId • ${seller.region.isNotEmpty ? seller.region : (seller.countryName.isNotEmpty ? seller.countryName : 'Verified')}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppColors.getTextSecondary(isDark),
-                      ),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          margin: const EdgeInsets.only(right: 6),
+                          decoration: BoxDecoration(
+                            color: seller.isMerchant
+                                ? Colors.purple.withValues(alpha: 0.25)
+                                : Colors.amber.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: seller.isMerchant ? Colors.purpleAccent : Colors.amber,
+                              width: 0.8,
+                            ),
+                          ),
+                          child: Text(
+                            seller.roleLabel,
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: seller.isMerchant ? Colors.purpleAccent : Colors.amber,
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: Text(
+                            'ID: $displayPublicId • ${seller.region.isNotEmpty ? seller.region : (seller.countryName.isNotEmpty ? seller.countryName : 'Verified')}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.getTextSecondary(isDark),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -373,7 +403,7 @@ class _AgencyRechargeScreenState extends State<AgencyRechargeScreen> {
                 ),
               ),
               Text(
-                'Stock: ${(seller.stockCoins / 1000).toStringAsFixed(1)}K',
+                'Stock: ${seller.formattedStock}',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,

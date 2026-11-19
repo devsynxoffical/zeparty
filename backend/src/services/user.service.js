@@ -482,6 +482,264 @@ export function resolveActiveRoleTagsAndBadges(user, activeNoble = null) {
   };
 }
 
+const EQUIPPED_MEDALS_POLICY_PREFIX = 'user_equipped_medals_';
+
+function resolveSvipMedalAsset(svipLevel) {
+  const lvl = Math.min(16, Math.max(1, Number(svipLevel) || 1));
+  const padded = String(lvl).padStart(2, '0');
+  const animationUrl = `assets/svip/SVIP${padded}_badge_live.webp`;
+  // Levels 2 and 16 only bundle the animated live badge asset; 1 and 3-15 bundle svip-{lvl}_badge.webp
+  const iconUrl = (lvl === 2 || lvl === 16)
+    ? animationUrl
+    : `assets/svip/svip-${lvl}_badge.webp`;
+  return { iconUrl, animationUrl };
+}
+
+/**
+ * Bug #15: Shared authoritative medal resolver for both owner and visitor profile responses.
+ * Resolves SVIP and Noble entitlements independently, applies the user's explicit equipped-medal
+ * selection (persisted in policyConfiguration), and returns public-safe asset metadata only.
+ */
+export function resolveAuthoritativeMedals(user, activeNoble = null, explicitSelection = null) {
+  if (!user) {
+    return {
+      equippedMedalIds: [],
+      hasExplicitMedalSelection: false,
+      equippedMedals: [],
+      medalsCount: 0,
+    };
+  }
+
+  const nobleRankRaw = activeNoble?.nobleRank || activeNoble?.nobleTitle || '';
+  const nobleActive = Boolean(
+    activeNoble &&
+    nobleRankRaw &&
+    String(nobleRankRaw).toUpperCase() !== 'NONE' &&
+    (!activeNoble.expiresAt || new Date(activeNoble.expiresAt).getTime() > Date.now())
+  );
+  const nobleLower = nobleActive ? String(nobleRankRaw).toLowerCase().trim() : '';
+
+  const svipLevel = Math.max(0, Number(user.profile?.svipLevel || 0));
+  const isMerchant = Boolean(user.merchant && user.merchant.status === 'ACTIVE');
+  const isSeller = Boolean(user.coinSeller && user.coinSeller.sellerStatus === 'ACTIVE');
+  const isBd = Boolean((user.managedBDCenters && user.managedBDCenters.length > 0) || user.userType === 'BD_AGENT');
+  const isHost = Boolean(user.hostProfile && user.hostProfile.hostStatus === 'ACTIVE');
+
+  const catalog = [
+    {
+      id: 'noble_emperor',
+      name: 'Emperor Aristocracy',
+      category: 'Nobility',
+      level: 7,
+      iconUrl: 'assets/nobles/emperor_badge.webp',
+      earned: nobleActive && (nobleLower.includes('emperor') || nobleLower.includes('imperial')),
+    },
+    {
+      id: 'noble_king',
+      name: 'King Aristocracy',
+      category: 'Nobility',
+      level: 6,
+      iconUrl: 'assets/nobles/ZP-037_tier-6-king_badge.webp',
+      earned: nobleActive && nobleLower.includes('king'),
+    },
+    {
+      id: 'noble_duke',
+      name: 'Duke Aristocracy',
+      category: 'Nobility',
+      level: 5,
+      iconUrl: 'assets/nobles/duke_badge.webp',
+      earned: nobleActive && nobleLower.includes('duke'),
+    },
+    {
+      id: 'noble_marquis',
+      name: 'Marquis Aristocracy',
+      category: 'Nobility',
+      level: 4,
+      iconUrl: 'assets/nobles/marquis_badge.webp',
+      earned: nobleActive && nobleLower.includes('marquis'),
+    },
+    {
+      id: 'noble_count',
+      name: 'Count Aristocracy',
+      category: 'Nobility',
+      level: 3,
+      iconUrl: 'assets/nobles/count_badge.webp',
+      earned: nobleActive && (nobleLower.includes('count') || nobleLower.includes('earl')),
+    },
+    {
+      id: 'noble_viscount',
+      name: 'Viscount Aristocracy',
+      category: 'Nobility',
+      level: 2,
+      iconUrl: 'assets/nobles/viscount_badge.webp',
+      earned: nobleActive && nobleLower.includes('viscount'),
+    },
+    {
+      id: 'noble_baron',
+      name: 'Baron Aristocracy',
+      category: 'Nobility',
+      level: 1,
+      iconUrl: 'assets/nobles/baron_badge.webp',
+      earned: nobleActive && (nobleLower.includes('baron') || nobleLower.includes('knight')),
+    },
+    {
+      id: 'role_merchant',
+      name: 'Official Merchant',
+      category: 'Roles',
+      level: 1,
+      iconUrl: 'assets/roles/marchent_badge.webp',
+      earned: isMerchant,
+    },
+    {
+      id: 'role_seller',
+      name: 'Coins Agency Seller',
+      category: 'Roles',
+      level: 1,
+      iconUrl: 'assets/roles/ZP-182_agency_badge.webp',
+      earned: isSeller,
+    },
+    {
+      id: 'role_bd',
+      name: 'Business Development',
+      category: 'Roles',
+      level: 1,
+      iconUrl: 'assets/roles/ZP-188_bd_badge.webp',
+      earned: isBd,
+    },
+    {
+      id: 'role_host',
+      name: 'Verified Broadcaster',
+      category: 'Roles',
+      level: 1,
+      iconUrl: 'assets/roles/host_badge.webp',
+      earned: isHost,
+    },
+    {
+      id: 'prestige_svip',
+      name: svipLevel > 0 ? `SVIP ${svipLevel} Prestige` : 'SVIP Prestige',
+      category: 'Prestige',
+      level: svipLevel,
+      ...(svipLevel > 0
+        ? resolveSvipMedalAsset(svipLevel)
+        : { iconUrl: 'assets/svip/svip-7_badge.webp', animationUrl: null }),
+      earned: svipLevel > 0,
+    },
+  ];
+
+  const hasExplicit = Boolean(explicitSelection && explicitSelection.hasExplicitSelection === true);
+  const selectedSet = hasExplicit && Array.isArray(explicitSelection.medalIds)
+    ? new Set(explicitSelection.medalIds.map((id) => String(id)))
+    : null;
+
+  const defaultIds = new Set();
+  if (!hasExplicit) {
+    const earnedNoble = catalog.find((c) => c.category === 'Nobility' && c.earned);
+    if (earnedNoble) defaultIds.add(earnedNoble.id);
+    if (svipLevel > 0) defaultIds.add('prestige_svip');
+    if (defaultIds.size === 0) {
+      if (isMerchant) defaultIds.add('role_merchant');
+      else if (isSeller) defaultIds.add('role_seller');
+    }
+  }
+
+  const equippedMedals = catalog
+    .filter((item) => item.earned && (hasExplicit ? selectedSet.has(item.id) : defaultIds.has(item.id)))
+    .map((item) => ({
+      id: item.id,
+      assetId: item.id,
+      name: item.name,
+      category: item.category,
+      level: item.level,
+      iconUrl: item.iconUrl,
+      imageUrl: item.iconUrl,
+      animationUrl: item.animationUrl || null,
+      isEarned: true,
+      isEquipped: true,
+    }));
+
+  // Include any custom honor badge/medal IDs explicitly equipped by user (handled client-side with honorAssets)
+  const equippedIdsSet = new Set(equippedMedals.map((m) => m.id));
+  if (hasExplicit && selectedSet) {
+    for (const id of selectedSet) {
+      const isCatalogId = catalog.some((c) => c.id === id);
+      if (!isCatalogId) {
+        equippedIdsSet.add(id);
+      }
+    }
+  }
+
+  return {
+    equippedMedalIds: Array.from(equippedIdsSet),
+    hasExplicitMedalSelection: hasExplicit,
+    equippedMedals,
+    medalsCount: equippedMedals.length,
+  };
+}
+
+async function readExplicitMedalSelection(userId, db = prisma) {
+  if (!userId || !db?.policyConfiguration?.findUnique) return null;
+  try {
+    const rec = await db.policyConfiguration.findUnique({
+      where: { key: `${EQUIPPED_MEDALS_POLICY_PREFIX}${userId}` },
+    });
+    if (rec && rec.value && typeof rec.value === 'object') {
+      return {
+        hasExplicitSelection: true,
+        medalIds: Array.isArray(rec.value.medalIds) ? rec.value.medalIds.map(String) : [],
+        updatedAt: rec.value.updatedAt || null,
+      };
+    }
+  } catch (_) {}
+  return null;
+}
+
+export async function getUserEquippedMedals(userId, db = prisma) {
+  const user = await userRepository.findPublicProfileById(userId, db).catch(() => null);
+  if (!user) {
+    const error = new Error('User not found');
+    error.statusCode = 404;
+    error.code = 'USER_NOT_FOUND';
+    throw error;
+  }
+  const [activeNoble, explicitSelection] = await Promise.all([
+    nobleService.getActiveNoble(user.id, { checkExpiry: true }, db).catch(() => null),
+    readExplicitMedalSelection(user.id, db),
+  ]);
+  return resolveAuthoritativeMedals(user, activeNoble, explicitSelection);
+}
+
+export async function updateUserEquippedMedals(userId, medalIds, db = prisma) {
+  if (!userId) {
+    const error = new Error('User authentication is required');
+    error.statusCode = 401;
+    error.code = 'UNAUTHORIZED';
+    throw error;
+  }
+  const normalizedIds = Array.isArray(medalIds)
+    ? Array.from(new Set(medalIds.map((id) => String(id).trim()).filter(Boolean))).slice(0, 20)
+    : [];
+
+  const payload = {
+    medalIds: normalizedIds,
+    updatedAt: new Date().toISOString(),
+  };
+
+  if (db?.policyConfiguration?.upsert) {
+    await db.policyConfiguration.upsert({
+      where: { key: `${EQUIPPED_MEDALS_POLICY_PREFIX}${userId}` },
+      create: {
+        key: `${EQUIPPED_MEDALS_POLICY_PREFIX}${userId}`,
+        value: payload,
+      },
+      update: {
+        value: payload,
+      },
+    });
+  }
+
+  return getUserEquippedMedals(userId, db);
+}
+
 export async function getSelfProfile(userId, db = prisma) {
   if (!userId || (typeof userId === 'string' && (userId.startsWith('dev-admin') || userId.startsWith('admin_shadow')))) {
     const error = new Error('User not found');
@@ -718,6 +976,8 @@ export async function getSelfProfile(userId, db = prisma) {
   const selfCardUrl = isCardExplicitlyUnequipped ? 'none' : (user.profile?.profileCardUrl || equippedCard || null);
   const selfSvipPoints = user.profile?.svipPoints != null ? Number(user.profile.svipPoints) : 0;
   const { activeRoleTags, roleTags, badgeGallery } = resolveActiveRoleTagsAndBadges(user, activeNobleSelf);
+  const selfExplicitMedals = await readExplicitMedalSelection(userId, db);
+  const selfMedalState = resolveAuthoritativeMedals(user, activeNobleSelf, selfExplicitMedals);
   if (profileWithPresence) {
     profileWithPresence.nobleRank = selfNobleRank;
     profileWithPresence.nobleTitle = selfNobleRank;
@@ -737,6 +997,10 @@ export async function getSelfProfile(userId, db = prisma) {
     profileWithPresence.activeRoleTags = activeRoleTags;
     profileWithPresence.roleTags = roleTags;
     profileWithPresence.badgeGallery = badgeGallery;
+    profileWithPresence.equippedMedalIds = selfMedalState.equippedMedalIds;
+    profileWithPresence.hasExplicitMedalSelection = selfMedalState.hasExplicitMedalSelection;
+    profileWithPresence.equippedMedals = selfMedalState.equippedMedals;
+    profileWithPresence.medalsCount = selfMedalState.medalsCount;
     profileWithPresence.levels = {
       wealth: wealthLvl,
       wealthLevel: wealthLvl,
@@ -763,6 +1027,10 @@ export async function getSelfProfile(userId, db = prisma) {
     joinedRoomsCount: roomCount,
     publicId,
     zePartyId: publicId,
+    equippedMedalIds: selfMedalState.equippedMedalIds,
+    hasExplicitMedalSelection: selfMedalState.hasExplicitMedalSelection,
+    equippedMedals: selfMedalState.equippedMedals,
+    medalsCount: selfMedalState.medalsCount,
     activeRoleTags,
     roleTags,
     badgeGallery,
@@ -1070,6 +1338,8 @@ export async function getPublicProfile(userId, db = prisma) {
   const pubCardUrl = isPubCardExplicitlyUnequipped ? 'none' : (publicUser.profile?.profileCardUrl || equippedCard || null);
   const pubSvipPoints = publicUser.profile?.svipPoints != null ? Number(publicUser.profile.svipPoints) : 0;
   const { activeRoleTags, roleTags, badgeGallery } = resolveActiveRoleTagsAndBadges(publicUser, activeNoblePub);
+  const pubExplicitMedals = await readExplicitMedalSelection(canonicalUserId, db);
+  const pubMedalState = resolveAuthoritativeMedals(publicUser, activeNoblePub, pubExplicitMedals);
   if (profileWithPresence) {
     profileWithPresence.nobleRank = pubNobleRank;
     profileWithPresence.nobleTitle = pubNobleRank;
@@ -1089,6 +1359,10 @@ export async function getPublicProfile(userId, db = prisma) {
     profileWithPresence.activeRoleTags = activeRoleTags;
     profileWithPresence.roleTags = roleTags;
     profileWithPresence.badgeGallery = badgeGallery;
+    profileWithPresence.equippedMedalIds = pubMedalState.equippedMedalIds;
+    profileWithPresence.hasExplicitMedalSelection = pubMedalState.hasExplicitMedalSelection;
+    profileWithPresence.equippedMedals = pubMedalState.equippedMedals;
+    profileWithPresence.medalsCount = pubMedalState.medalsCount;
   }
 
   return {
@@ -1096,6 +1370,10 @@ export async function getPublicProfile(userId, db = prisma) {
     activeRoleTags,
     roleTags,
     badgeGallery,
+    equippedMedalIds: pubMedalState.equippedMedalIds,
+    hasExplicitMedalSelection: pubMedalState.hasExplicitMedalSelection,
+    equippedMedals: pubMedalState.equippedMedals,
+    medalsCount: pubMedalState.medalsCount,
     followersCount,
     followingCount,
     visitorsCount,
@@ -4747,6 +5025,9 @@ export default {
   getSelfProfile,
   updateSelfProfile,
   getPublicProfile,
+  resolveAuthoritativeMedals,
+  getUserEquippedMedals,
+  updateUserEquippedMedals,
   searchUsers,
   changeUserCountryByAdmin,
   verifyUserForUniqueGrant,

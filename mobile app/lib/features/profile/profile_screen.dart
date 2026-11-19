@@ -363,9 +363,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   showVipFrame: user.isVip,
                   frameAsset: user.avatarFrame.isNotEmpty && user.avatarFrame != 'none'
                       ? user.avatarFrame
-                      : (user.nobleTitle != null
-                          ? NobleBadgeHelper.getFrameAsset(user.nobleTitle)
-                          : (user.svipLevel > 0 ? NobleBadgeHelper.getFrameAsset('SVIP ${user.svipLevel}') : null)),
+                      : null,
                 ),
               ),
               Positioned(

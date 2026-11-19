@@ -366,12 +366,12 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
   Future<void> _loadEquippedMedals() async {
     final targetId = _user?.id ?? widget.userId;
     if (targetId.isNotEmpty) {
-      final hasSaved = await MedalManager.hasSavedEquippedMedals(targetId);
-      final ids = await MedalManager.getEquippedMedalIds(targetId);
+      // Bug #15: Fetch authoritative equipped medal selection from backend so owner & visitor match
+      final selection = await MedalManager.fetchEquippedMedals(targetId);
       if (mounted) {
         setState(() {
-          _hasExplicitMedalSelection = hasSaved;
-          _equippedMedalIds = ids;
+          _hasExplicitMedalSelection = selection.hasExplicitSelection;
+          _equippedMedalIds = selection.equippedIds;
         });
       }
     }
@@ -1702,11 +1702,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
               _user!.avatarFrame.isNotEmpty &&
               _user!.avatarFrame != 'none'
           ? _user!.avatarFrame
-          : (_user != null && _user!.hasActiveNoble
-                ? NobleBadgeHelper.getFrameAsset(_user!.nobleTitle)
-                : (_user != null && _user!.svipLevel > 0
-                      ? NobleBadgeHelper.getFrameAsset('SVIP ${_user!.svipLevel}')
-                      : null)),
+          : null,
     );
 
     if (isInActiveRoom) {
@@ -2614,7 +2610,44 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
       }
     }
 
-    final isAsset = medal.iconUrl.startsWith('assets/');
+    final rawUrl = medal.iconUrl.trim();
+    final normalizedAsset = rawUrl.startsWith('/assets/') ? rawUrl.substring(1) : rawUrl;
+    final isAsset = normalizedAsset.startsWith('assets/');
+    final isNetwork = rawUrl.startsWith('http://') ||
+        rawUrl.startsWith('https://') ||
+        rawUrl.startsWith('/');
+    final resolvedNetworkUrl = (rawUrl.startsWith('http://') || rawUrl.startsWith('https://'))
+        ? rawUrl
+        : '${ApiClient.baseUrl}$rawUrl';
+
+    Widget medalVisual;
+    if (isAsset) {
+      medalVisual = Image.asset(
+        normalizedAsset,
+        fit: BoxFit.contain,
+        errorBuilder: (_, _, _) => const Icon(
+          Icons.emoji_events_rounded,
+          size: 26,
+          color: Colors.amber,
+        ),
+      );
+    } else if (isNetwork) {
+      medalVisual = Image.network(
+        resolvedNetworkUrl,
+        fit: BoxFit.contain,
+        errorBuilder: (_, _, _) => Icon(
+          getMedalIcon(rawUrl),
+          size: 26,
+          color: Colors.amber,
+        ),
+      );
+    } else {
+      medalVisual = Icon(
+        getMedalIcon(rawUrl),
+        size: 26,
+        color: Colors.amber,
+      );
+    }
 
     return Container(
       width: 52,
@@ -2631,21 +2664,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
           BoxShadow(color: Colors.amber.withValues(alpha: 0.25), blurRadius: 8),
         ],
       ),
-      child: isAsset
-          ? Image.asset(
-              medal.iconUrl,
-              fit: BoxFit.contain,
-              errorBuilder: (_, __, ___) => const Icon(
-                Icons.emoji_events_rounded,
-                size: 26,
-                color: Colors.amber,
-              ),
-            )
-          : Icon(
-              getMedalIcon(medal.iconUrl),
-              size: 26,
-              color: Colors.amber,
-            ),
+      child: medalVisual,
     );
   }
 

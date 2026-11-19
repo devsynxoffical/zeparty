@@ -1,8 +1,14 @@
 import crypto from 'crypto';
 import prisma from '../config/database.js';
 import merchantRepository from '../repositories/merchant.repository.js';
+import walletRepository from '../repositories/wallet.repository.js';
+import notificationService from './notification.service.js';
+import { emitToUser } from '../socket/socket.emitter.js';
 import { generate7DigitUserId } from '../utils/idGenerator.util.js';
+import { generateReference } from '../utils/reference.util.js';
+import { normalizeCountry } from '../utils/country.util.js';
 import { applySvipPointsForRecharge } from './recharge.service.js';
+import { invalidateSellerDirectoryCache } from './seller.service.js';
 
 function hashSecret(secret) {
   return crypto.createHash('sha256').update(secret).digest('hex');
@@ -532,12 +538,17 @@ export async function getMerchantLedger(userId, { page = 1, limit = 20 } = {}, d
   };
 }
 
-export async function executeMerchantRecharge(merchantUserId, { recipientId, amountCoins, notes, idempotencyKey }, { ipAddress } = {}, db = prisma) {
+export async function executeMerchantRecharge(
+  merchantUserId,
+  { recipientId, recipientType, amountCoins, notes, idempotencyKey },
+  { ipAddress } = {},
+  db = prisma
+) {
   const merchant = await db.merchant.findUnique({
     where: { userId: merchantUserId },
     include: {
       user: {
-        include: { wallet: true },
+        include: { wallet: true, profile: true },
       },
     },
   });
@@ -565,17 +576,22 @@ export async function executeMerchantRecharge(merchantUserId, { recipientId, amo
         { phone: cleanRecipient },
       ],
     },
-    include: { wallet: true, profile: true },
+    include: { wallet: true, profile: true, coinSeller: true },
   });
 
   if (!recipient || recipient.status === 'DELETED' || recipient.status === 'BANNED') {
-    const error = new Error(`Recipient not found or unavailable`);
+    const error = new Error('Recipient not found or unavailable');
     error.statusCode = 404;
     error.code = 'RECIPIENT_NOT_FOUND';
     throw error;
   }
 
-  const amt = BigInt(amountCoins || 0);
+  let amt;
+  try {
+    amt = BigInt(amountCoins || 0);
+  } catch {
+    amt = 0n;
+  }
   if (amt <= 0n) {
     const error = new Error('Recharge amount must be a positive integer');
     error.statusCode = 400;
@@ -583,135 +599,322 @@ export async function executeMerchantRecharge(merchantUserId, { recipientId, amo
     throw error;
   }
 
-  const currentQuota = merchant.monthlyQuotaCoins || 0n;
-  if (currentQuota < amt) {
-    const error = new Error(`Insufficient merchant coin allocation. Available: ${currentQuota.toString()}, Requested: ${amt.toString()}`);
-    error.statusCode = 400;
-    error.code = 'INSUFFICIENT_MERCHANT_QUOTA';
-    throw error;
+  // Determine explicit target wallet mode:
+  // - If recipientType is explicitly supplied, honor it strictly.
+  // - Otherwise infer from notes ('coin seller' vs 'user recharge'), defaulting to USER personal wallet.
+  const rawType = String(recipientType || '').trim().toUpperCase();
+  const lowerNotes = String(notes || '').toLowerCase();
+  const isCoinSellerTarget = rawType
+    ? rawType.includes('SELLER')
+    : (lowerNotes.includes('coin seller') && !lowerNotes.includes('user recharge'));
+
+  const isSelfRecharge = recipient.id === merchant.userId;
+
+  // Regional / country eligibility check for external transfers (self-recharge is always permitted)
+  if (!isSelfRecharge) {
+    const merchantCountry = normalizeCountry(merchant.user?.countryCode || merchant.user?.region);
+    const recipientCountry = normalizeCountry(recipient.countryCode || recipient.region);
+    if (merchantCountry && recipientCountry && merchantCountry.code !== recipientCountry.code) {
+      const error = new Error(
+        `Cross-country merchant transfers are prohibited. Merchant is in ${merchantCountry.name}, recipient is in ${recipientCountry.name}.`
+      );
+      error.statusCode = 403;
+      error.code = 'CROSS_COUNTRY_RECHARGE_PROHIBITED';
+      throw error;
+    }
   }
 
-  const txRefId = idempotencyKey || `MERCHANT_RECHARGE_${merchant.id}_${recipient.id}_${Date.now()}`;
+  // If targeting a Coin Seller business wallet, verify active authoritative CoinSeller record
+  if (isCoinSellerTarget) {
+    const hasActiveSellerRecord =
+      recipient.coinSeller && recipient.coinSeller.sellerStatus === 'ACTIVE';
+    if (!hasActiveSellerRecord) {
+      const error = new Error(
+        `User '${recipient.username}' (${recipient.id}) is not an authorized Coin Seller account.`
+      );
+      error.statusCode = 400;
+      error.code = 'NOT_A_COIN_SELLER';
+      throw error;
+    }
+  }
+
+  const cleanIdempotencyKey = idempotencyKey ? String(idempotencyKey).trim() : null;
+  const txRefId = cleanIdempotencyKey || generateReference('MRC-RCHG');
+  const transferTimestamp = new Date();
+  const targetWalletLabel = isCoinSellerTarget
+    ? 'Coin Seller Business Wallet'
+    : 'Personal Coin Wallet';
 
   const result = await db.$transaction(async (tx) => {
     // 0. Idempotency check if caller supplied explicit idempotency key
-    if (idempotencyKey) {
+    if (cleanIdempotencyKey) {
       const existing = await tx.walletLedger.findFirst({
         where: { referenceId: txRefId },
       });
       if (existing) {
+        const latestMerchant = await tx.merchant.findUnique({ where: { id: merchant.id } });
+        const latestWallet = await tx.wallet.findUnique({ where: { userId: recipient.id } });
         return {
           merchantId: merchant.id,
           companyName: merchant.companyName,
-          remainingQuota: currentQuota.toString(),
+          referenceId: txRefId,
+          transactionId: txRefId,
+          remainingQuota: (latestMerchant?.monthlyQuotaCoins ?? merchant.monthlyQuotaCoins ?? 0n).toString(),
           recipientId: recipient.id,
           recipientUsername: recipient.username,
           amountRecharged: amt.toString(),
+          recipientNewBalance: isCoinSellerTarget
+            ? (latestWallet?.sellerBalanceCoins ?? 0n).toString()
+            : (latestWallet?.coinBalance ?? 0n).toString(),
+          targetWallet: targetWalletLabel,
+          status: 'Successful',
           alreadyProcessed: true,
+          notification: null,
         };
       }
     }
 
-    // 1. Deduct from merchant quota
-    const updatedMerchant = await tx.merchant.update({
-      where: { id: merchant.id },
-      data: {
-        monthlyQuotaCoins: currentQuota - amt,
-      },
-    });
-
-    const isCoinSeller = (recipient.userType === 'SELLER') || (notes && notes.toLowerCase().includes('coin seller'));
-
-    // 2. Ensure recipient has wallet & credit coins
-    let recipientWallet = recipient.wallet;
-    let recCoinsBefore = 0n;
-    let recSellerCoinsBefore = 0n;
-
-    if (!recipientWallet) {
-      recipientWallet = await tx.wallet.create({
-        data: {
-          userId: recipient.id,
-          coinBalance: isCoinSeller ? 0n : amt,
-          diamondBalance: 0n,
-          sellerBalanceCoins: isCoinSeller ? amt : 0n,
-        },
-      });
-    } else {
-      recCoinsBefore = recipientWallet.coinBalance || 0n;
-      recSellerCoinsBefore = recipientWallet.sellerBalanceCoins || 0n;
-
-      if (isCoinSeller) {
-        recipientWallet = await tx.wallet.update({
-          where: { id: recipientWallet.id },
-          data: {
-            sellerBalanceCoins: { increment: amt },
-          },
-        });
-      } else {
-        recipientWallet = await tx.wallet.update({
-          where: { id: recipientWallet.id },
-          data: {
-            coinBalance: { increment: amt },
-          },
-        });
+    // 1. Lock Merchant row inside transaction to prevent concurrent overspending
+    let lockedQuota = BigInt(merchant.monthlyQuotaCoins ?? 0n);
+    let lockedStatus = merchant.status;
+    if (typeof tx.$queryRaw === 'function') {
+      const lockedRows = await tx.$queryRaw`
+        SELECT id, "monthlyQuotaCoins", status
+        FROM "Merchant"
+        WHERE id = ${merchant.id}
+        FOR UPDATE
+      `;
+      if (Array.isArray(lockedRows) && lockedRows.length > 0) {
+        lockedQuota = BigInt(lockedRows[0].monthlyQuotaCoins ?? 0n);
+        lockedStatus = lockedRows[0].status;
       }
     }
 
-    // 3. If merchant has wallet, update sellerBalanceCoins
-    let merchantWallet = merchant.user?.wallet;
-    if (merchantWallet) {
-      const currentSellerCoins = merchantWallet.sellerBalanceCoins || 0n;
-      const newSellerCoins = currentSellerCoins >= amt ? currentSellerCoins - amt : 0n;
-      await tx.wallet.update({
-        where: { id: merchantWallet.id },
-        data: {
-          sellerBalanceCoins: newSellerCoins,
-        },
-      });
+    if (lockedStatus !== 'ACTIVE') {
+      const error = new Error('Authorized active merchant account required');
+      error.statusCode = 403;
+      error.code = 'MERCHANT_INACTIVE';
+      throw error;
+    }
 
-      // Record WalletLedger on merchant wallet
+    if (lockedQuota < amt) {
+      const error = new Error(
+        `Insufficient merchant coin allocation. Available: ${lockedQuota.toString()}, Requested: ${amt.toString()}`
+      );
+      error.statusCode = 400;
+      error.code = 'INSUFFICIENT_MERCHANT_QUOTA';
+      throw error;
+    }
+
+    const updatedMerchant = await tx.merchant.update({
+      where: { id: merchant.id },
+      data: {
+        monthlyQuotaCoins: { decrement: amt },
+      },
+    });
+    const remainingQuota = BigInt(updatedMerchant.monthlyQuotaCoins ?? (lockedQuota - amt));
+
+    const merchantReason = `Merchant Recharge to @${recipient.username} (${recipient.id}): ${notes || 'Recharge transfer'}`;
+    const recipientReason = `Merchant Recharge from ${merchant.companyName}: ${notes || 'Recharge transfer'}`;
+
+    let finalRecipientBalance = 0n;
+
+    if (isSelfRecharge && !isCoinSellerTarget) {
+      // Self-recharge: single locked wallet row — debit sellerBalanceCoins, credit coinBalance atomically
+      let selfWallet = merchant.user?.wallet
+        ? await walletRepository.findWithLock(merchant.user.wallet.id, tx)
+        : await tx.wallet.findUnique({ where: { userId: merchant.userId } });
+
+      if (!selfWallet) {
+        selfWallet = await tx.wallet.create({
+          data: {
+            userId: merchant.userId,
+            coinBalance: amt,
+            diamondBalance: 0n,
+            sellerBalanceCoins: remainingQuota,
+          },
+        });
+        finalRecipientBalance = amt;
+
+        await tx.walletLedger.create({
+          data: {
+            walletId: selfWallet.id,
+            transactionType: 'TRANSFER_IN',
+            coinDelta: amt,
+            balanceBefore: {
+              coins: '0',
+              sellerCoins: lockedQuota.toString(),
+            },
+            balanceAfter: {
+              coins: amt.toString(),
+              sellerCoins: remainingQuota.toString(),
+              reason: recipientReason,
+            },
+            referenceId: txRefId,
+          },
+        });
+      } else {
+        const coinsBefore = BigInt(selfWallet.coinBalance ?? 0n);
+        const sellerBefore = BigInt(selfWallet.sellerBalanceCoins ?? 0n);
+        const sellerAfter = sellerBefore >= amt ? sellerBefore - amt : remainingQuota;
+        const coinsAfter = coinsBefore + amt;
+        finalRecipientBalance = coinsAfter;
+
+        await tx.wallet.update({
+          where: { id: selfWallet.id },
+          data: {
+            sellerBalanceCoins: sellerAfter,
+            coinBalance: coinsAfter,
+          },
+        });
+
+        await tx.walletLedger.create({
+          data: {
+            walletId: selfWallet.id,
+            transactionType: 'TRANSFER_OUT',
+            coinDelta: -amt,
+            balanceBefore: {
+              coins: coinsBefore.toString(),
+              sellerCoins: sellerBefore.toString(),
+            },
+            balanceAfter: {
+              coins: coinsBefore.toString(),
+              sellerCoins: sellerAfter.toString(),
+              reason: merchantReason,
+            },
+            referenceId: txRefId,
+          },
+        });
+
+        await tx.walletLedger.create({
+          data: {
+            walletId: selfWallet.id,
+            transactionType: 'TRANSFER_IN',
+            coinDelta: amt,
+            balanceBefore: {
+              coins: coinsBefore.toString(),
+              sellerCoins: sellerAfter.toString(),
+            },
+            balanceAfter: {
+              coins: coinsAfter.toString(),
+              sellerCoins: sellerAfter.toString(),
+              reason: recipientReason,
+            },
+            referenceId: txRefId,
+          },
+        });
+      }
+    } else {
+      // External recharge (or Coin Seller recharge)
+      // 2. Credit recipient wallet (and CoinSeller.resellerBalanceCoins if Coin Seller target)
+      let recipientWallet = recipient.wallet
+        ? await walletRepository.findWithLock(recipient.wallet.id, tx)
+        : await tx.wallet.findUnique({ where: { userId: recipient.id } });
+
+      let recCoinsBefore = 0n;
+      let recSellerCoinsBefore = 0n;
+
+      if (!recipientWallet) {
+        recipientWallet = await tx.wallet.create({
+          data: {
+            userId: recipient.id,
+            coinBalance: isCoinSellerTarget ? 0n : amt,
+            diamondBalance: 0n,
+            sellerBalanceCoins: isCoinSellerTarget ? amt : 0n,
+          },
+        });
+      } else {
+        recCoinsBefore = BigInt(recipientWallet.coinBalance ?? 0n);
+        recSellerCoinsBefore = BigInt(recipientWallet.sellerBalanceCoins ?? 0n);
+
+        if (isCoinSellerTarget) {
+          recipientWallet = await tx.wallet.update({
+            where: { id: recipientWallet.id },
+            data: {
+              sellerBalanceCoins: { increment: amt },
+            },
+          });
+        } else {
+          recipientWallet = await tx.wallet.update({
+            where: { id: recipientWallet.id },
+            data: {
+              coinBalance: { increment: amt },
+            },
+          });
+        }
+      }
+
+      if (isCoinSellerTarget && recipient.coinSeller) {
+        await tx.coinSeller.update({
+          where: { id: recipient.coinSeller.id },
+          data: {
+            resellerBalanceCoins: { increment: amt },
+          },
+        });
+      }
+
+      finalRecipientBalance = isCoinSellerTarget
+        ? recSellerCoinsBefore + amt
+        : recCoinsBefore + amt;
+
+      // 3. Debit merchant wallet sellerBalanceCoins & record TRANSFER_OUT ledger
+      let merchantWallet = merchant.user?.wallet
+        ? await walletRepository.findWithLock(merchant.user.wallet.id, tx)
+        : await tx.wallet.findUnique({ where: { userId: merchant.userId } });
+
+      if (merchantWallet) {
+        const currentSellerCoins = BigInt(merchantWallet.sellerBalanceCoins ?? 0n);
+        const currentMerchantCoins = BigInt(merchantWallet.coinBalance ?? 0n);
+        const newSellerCoins = currentSellerCoins >= amt ? currentSellerCoins - amt : 0n;
+
+        await tx.wallet.update({
+          where: { id: merchantWallet.id },
+          data: {
+            sellerBalanceCoins: newSellerCoins,
+          },
+        });
+
+        await tx.walletLedger.create({
+          data: {
+            walletId: merchantWallet.id,
+            transactionType: 'TRANSFER_OUT',
+            coinDelta: -amt,
+            balanceBefore: {
+              coins: currentMerchantCoins.toString(),
+              sellerCoins: currentSellerCoins.toString(),
+            },
+            balanceAfter: {
+              coins: currentMerchantCoins.toString(),
+              sellerCoins: newSellerCoins.toString(),
+              reason: merchantReason,
+            },
+            referenceId: txRefId,
+          },
+        });
+      }
+
+      // 4. Record TRANSFER_IN ledger on recipient wallet
       await tx.walletLedger.create({
         data: {
-          walletId: merchantWallet.id,
-          transactionType: 'TRANSFER_OUT',
-          coinDelta: -amt,
+          walletId: recipientWallet.id,
+          transactionType: 'TRANSFER_IN',
+          coinDelta: amt,
           balanceBefore: {
-            coinBalance: merchantWallet.coinBalance.toString(),
-            sellerBalanceCoins: merchantWallet.sellerBalanceCoins.toString(),
+            coins: recCoinsBefore.toString(),
+            sellerCoins: recSellerCoinsBefore.toString(),
           },
           balanceAfter: {
-            coinBalance: merchantWallet.coinBalance.toString(),
-            sellerBalanceCoins: newSellerCoins.toString(),
+            coins: (isCoinSellerTarget ? recCoinsBefore : recCoinsBefore + amt).toString(),
+            sellerCoins: (isCoinSellerTarget ? recSellerCoinsBefore + amt : recSellerCoinsBefore).toString(),
+            reason: recipientReason,
           },
           referenceId: txRefId,
-          reason: `Merchant Recharge to @${recipient.username} (${recipient.id}): ${notes || 'Recharge transfer'}`,
         },
       });
     }
 
-    // 4. Record WalletLedger on recipient wallet
-    await tx.walletLedger.create({
-      data: {
-        walletId: recipientWallet.id,
-        transactionType: 'TRANSFER_IN',
-        coinDelta: amt,
-        balanceBefore: {
-          coinBalance: recCoinsBefore.toString(),
-          sellerBalanceCoins: recSellerCoinsBefore.toString(),
-        },
-        balanceAfter: {
-          coinBalance: (isCoinSeller ? recCoinsBefore : recCoinsBefore + amt).toString(),
-          sellerBalanceCoins: (isCoinSeller ? recSellerCoinsBefore + amt : recSellerCoinsBefore).toString(),
-        },
-        referenceId: txRefId,
-        reason: `Merchant Recharge from ${merchant.companyName}: ${notes || 'Recharge transfer'}`,
-      },
-    });
-
-    // 5. Accrue cumulative SVIP points for recipient user (ZP-BUG-015)
-    // Wholesale inventory restocking for Coin Sellers does NOT award SVIP points.
-    // Qualifying points are only awarded for direct end-user recharges to spendable coinBalance.
-    if (!isCoinSeller) {
+    // 5. Accrue cumulative SVIP points for direct end-user personal wallet recharges only
+    if (!isCoinSellerTarget) {
       await applySvipPointsForRecharge({
         userId: recipient.id,
         coinsRecharged: amt,
@@ -720,20 +923,295 @@ export async function executeMerchantRecharge(merchantUserId, { recipientId, amo
       });
     }
 
+    // 6. Atomic persistent official inbox receipt inside the same transaction
+    const senderName =
+      (merchant.companyName && merchant.companyName.trim()) ||
+      merchant.user?.profile?.displayName?.trim() ||
+      merchant.user?.username ||
+      'Official Merchant';
+    const notifResult = await notificationService.sendRechargeNotification(
+      {
+        recipientId: recipient.id,
+        sellerUserId: merchant.userId,
+        sellerName: senderName,
+        sellerPublicId: merchant.userId,
+        senderRole: 'Merchant',
+        targetWallet: targetWalletLabel,
+        amountCoins: amt,
+        transactionId: txRefId,
+        timestamp: transferTimestamp,
+      },
+      tx
+    );
+
     return {
       merchantId: merchant.id,
       companyName: merchant.companyName,
-      remainingQuota: (currentQuota - amt).toString(),
+      referenceId: txRefId,
+      transactionId: txRefId,
+      remainingQuota: remainingQuota.toString(),
       recipientId: recipient.id,
       recipientUsername: recipient.username,
       amountRecharged: amt.toString(),
-      recipientNewBalance: isCoinSeller
-        ? (recSellerCoinsBefore + amt).toString()
-        : (recCoinsBefore + amt).toString(),
+      recipientNewBalance: finalRecipientBalance.toString(),
+      targetWallet: targetWalletLabel,
+      status: 'Successful',
+      timestamp: transferTimestamp.toISOString(),
+      notification: notifResult?.notification || null,
     };
+  }, { maxWait: 15000, timeout: 30000 });
+
+  // 7. Post-commit non-blocking realtime inbox receipt & wallet balance push
+  if (result.notification && !result.alreadyProcessed) {
+    try {
+      await notificationService.dispatchRechargeRealtimeNotifications(
+        {
+          recipientId: recipient.id,
+          notification: result.notification,
+        },
+        db
+      );
+    } catch (notifErr) {
+      console.error('Failed to dispatch post-merchant-recharge notification:', notifErr);
+    }
+  }
+
+  if (!result.alreadyProcessed) {
+    // Invalidate directory cache for both merchant's country and recipient's country
+    await invalidateSellerDirectoryCache(merchant.user?.countryCode || merchant.user?.region);
+    if (isCoinSellerTarget) {
+      await invalidateSellerDirectoryCache(recipient.countryCode || recipient.region);
+    }
+
+    try {
+      emitToUser(recipient.id, 'wallet:balance_updated', {
+        coinBalance: isCoinSellerTarget ? undefined : result.recipientNewBalance,
+        sellerBalanceCoins: isCoinSellerTarget ? result.recipientNewBalance : undefined,
+        delta: amt.toString(),
+        direction: 'INCOME',
+        transactionId: txRefId,
+        timestamp: transferTimestamp.toISOString(),
+      });
+
+      if (isCoinSellerTarget) {
+        emitToUser(recipient.id, 'seller:inventory_updated', {
+          availableBalanceCoins: result.recipientNewBalance,
+          transactionId: txRefId,
+          timestamp: transferTimestamp.toISOString(),
+        });
+      }
+    } catch (_) {}
+  }
+
+  return {
+    ...result,
+    notification: result.notification
+      ? {
+          id: result.notification.id,
+          title: result.notification.title,
+          body: result.notification.body,
+          isRead: result.notification.isRead,
+          deliveryStatus: result.notification.deliveryStatus,
+          createdAt: result.notification.createdAt,
+        }
+      : null,
+  };
+}
+
+export async function verifyMerchantRechargeRecipient(
+  { merchantUserId = null, type = 'USER', targetId },
+  db = prisma
+) {
+  const clean = String(targetId || '').trim().replace(/^@/, '');
+  if (!clean) {
+    const error = new Error('Recipient ID or identifier is required');
+    error.statusCode = 400;
+    error.code = 'INVALID_RECIPIENT_ID';
+    throw error;
+  }
+
+  let user = await db.user.findFirst({
+    where: {
+      OR: [
+        { id: clean },
+        { username: { equals: clean, mode: 'insensitive' } },
+        { phone: clean },
+      ],
+    },
+    include: { profile: true, coinSeller: true },
   });
 
-  return result;
+  // Fallback: allow lookup by CoinSeller portal UUID if provided
+  if (!user && db.coinSeller?.findUnique) {
+    const sellerPortal = await db.coinSeller.findUnique({
+      where: { id: clean },
+      include: {
+        user: {
+          include: { profile: true, coinSeller: true },
+        },
+      },
+    });
+    if (sellerPortal?.user) {
+      user = sellerPortal.user;
+    }
+  }
+
+  if (!user) {
+    const error = new Error(`Recipient user not found for identifier '${clean}'`);
+    error.statusCode = 404;
+    error.code = 'USER_NOT_FOUND';
+    throw error;
+  }
+
+  if (user.status === 'DELETED' || user.status === 'BANNED' || user.status === 'SUSPENDED') {
+    const error = new Error('Account is inactive or suspended.');
+    error.statusCode = 400;
+    error.code = 'USER_INACTIVE';
+    throw error;
+  }
+
+  const isSellerTarget = String(type || '').toUpperCase().includes('SELLER');
+  const hasActiveSeller = Boolean(user.coinSeller && user.coinSeller.sellerStatus === 'ACTIVE');
+
+  if (isSellerTarget) {
+    if (!user.coinSeller) {
+      const error = new Error(
+        `User '${user.username}' (${user.id}) is not an authorized Coin Seller account.`
+      );
+      error.statusCode = 400;
+      error.code = 'NOT_A_COIN_SELLER';
+      throw error;
+    }
+    if (user.coinSeller.sellerStatus !== 'ACTIVE') {
+      const error = new Error(
+        `Coin Seller '${user.username}' (${user.id}) is currently suspended or inactive.`
+      );
+      error.statusCode = 400;
+      error.code = 'SELLER_INACTIVE';
+      throw error;
+    }
+  }
+
+  // Same-country regional eligibility check for external recipients
+  if (merchantUserId && user.id !== merchantUserId && db.user?.findUnique) {
+    const merchantUser = await db.user.findUnique({
+      where: { id: merchantUserId },
+      select: { countryCode: true, region: true },
+    });
+    const merchantCountry = normalizeCountry(merchantUser?.countryCode || merchantUser?.region);
+    const recipientCountry = normalizeCountry(user.countryCode || user.region);
+    if (merchantCountry && recipientCountry && merchantCountry.code !== recipientCountry.code) {
+      const error = new Error(
+        `Cross-country merchant transfers are prohibited. Merchant is in ${merchantCountry.name}, recipient is in ${recipientCountry.name}.`
+      );
+      error.statusCode = 403;
+      error.code = 'CROSS_COUNTRY_RECHARGE_PROHIBITED';
+      throw error;
+    }
+  }
+
+  const normalizedCountry = normalizeCountry(user.countryCode || user.region);
+  const nickname =
+    user.profile?.displayName && user.profile.displayName.trim()
+      ? user.profile.displayName.trim()
+      : user.username;
+  const profileImage = user.avatarUrl || null;
+
+  return {
+    accountId: user.id,
+    publicUserId: user.username,
+    nickname,
+    profileImage,
+    recipientType: isSellerTarget ? 'SELLER' : 'USER',
+    targetWallet: isSellerTarget ? 'Coin Seller Business Wallet' : 'Personal Coin Wallet',
+    recipientId: user.id,
+    username: user.username,
+    name: isSellerTarget && user.coinSeller?.businessName ? user.coinSeller.businessName : nickname,
+    displayName: nickname,
+    businessName: user.coinSeller?.businessName || null,
+    sellerId: user.coinSeller?.id || null,
+    sellerStatus: user.coinSeller?.sellerStatus || null,
+    isAuthorizedSeller: hasActiveSeller,
+    avatarUrl: profileImage,
+    countryCode: normalizedCountry?.code || user.countryCode || 'GLOBAL',
+    countryName: normalizedCountry?.name || user.region || null,
+    countryFlag: normalizedCountry?.flag || null,
+    status: user.status,
+    isVerified: user.status === 'ACTIVE',
+  };
+}
+
+export async function getMerchantRechargeStatus(identifier, merchantUserId = null, db = prisma) {
+  if (!identifier) {
+    const error = new Error('Transaction identifier is required');
+    error.statusCode = 400;
+    error.code = 'INVALID_TRANSACTION_ID';
+    throw error;
+  }
+
+  const clean = String(identifier).trim();
+  const ledger = await db.walletLedger.findFirst({
+    where: {
+      OR: [
+        { referenceId: clean },
+        { referenceId: `MRC-RCHG-${clean}` },
+      ],
+    },
+    include: {
+      wallet: {
+        include: {
+          user: { include: { profile: true } },
+        },
+      },
+    },
+  });
+
+  if (!ledger) {
+    return {
+      success: true,
+      found: false,
+      transactionId: clean,
+      status: 'NOT_FOUND',
+    };
+  }
+
+  const sibling = await db.walletLedger.findFirst({
+    where: {
+      referenceId: ledger.referenceId,
+      id: { not: ledger.id },
+    },
+    include: {
+      wallet: {
+        include: {
+          user: { include: { profile: true } },
+        },
+      },
+    },
+  });
+
+  const outEntry = ledger.transactionType === 'TRANSFER_OUT' ? ledger : sibling;
+  const inEntry = ledger.transactionType === 'TRANSFER_IN' ? ledger : sibling;
+
+  if (merchantUserId && outEntry?.wallet?.userId && outEntry.wallet.userId !== merchantUserId) {
+    const error = new Error('Transaction does not belong to this merchant');
+    error.statusCode = 403;
+    error.code = 'FORBIDDEN';
+    throw error;
+  }
+
+  const amountCoins = Math.abs(Number(inEntry?.coinDelta ?? outEntry?.coinDelta ?? 0n));
+  return {
+    success: true,
+    found: true,
+    transactionId: ledger.referenceId,
+    referenceId: ledger.referenceId,
+    status: 'Successful',
+    amountCoins,
+    merchantUserId: outEntry?.wallet?.userId || merchantUserId,
+    recipientUserId: inEntry?.wallet?.userId || null,
+    recipientUsername: inEntry?.wallet?.user?.username || null,
+    createdAt: ledger.createdAt.toISOString(),
+  };
 }
 
 export async function getMerchantUsdBalance(userId, db = prisma) {
@@ -786,7 +1264,7 @@ export async function getMerchantUsdBalance(userId, db = prisma) {
       status: 'Completed',
       timestamp: l.createdAt,
       referenceId: l.referenceId || l.id,
-      notes: l.reason || '',
+      notes: l.balanceAfter?.reason || '',
     }));
   }
 
@@ -878,9 +1356,9 @@ export async function exchangeUsdToCoins(userId, { usdAmount, ratePerDollar = 70
         balanceAfter: {
           usdBalance: newUsd.toFixed(2),
           sellerBalanceCoins: newSellerCoins.toString(),
+          reason: `Exchanged $${numUsd.toFixed(2)} USD to ${coinsToCredit.toString()} Coins (Rate: 1 USD = ${rate} Coins)`,
         },
         referenceId: txRef,
-        reason: `Exchanged $${numUsd.toFixed(2)} USD to ${coinsToCredit.toString()} Coins (Rate: 1 USD = ${rate} Coins)`,
       },
     });
 
@@ -912,6 +1390,8 @@ export default {
   getMerchantDashboard,
   getMerchantLedger,
   executeMerchantRecharge,
+  verifyMerchantRechargeRecipient,
+  getMerchantRechargeStatus,
   getMerchantUsdBalance,
   exchangeUsdToCoins,
   sanitizeMerchant,

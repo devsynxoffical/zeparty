@@ -320,6 +320,7 @@ export async function activateNobleTier(
     grantedBy = 'system',
     customExpiry = null,
     metadata = null,
+    idempotencyKey = null,
   } = {},
   db = prisma
 ) {
@@ -341,11 +342,44 @@ export async function activateNobleTier(
     expiresAt = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
   }
 
+  const cleanIdempotencyKey = idempotencyKey ? String(idempotencyKey).trim() : null;
+  const txRefId = cleanIdempotencyKey
+    ? (cleanIdempotencyKey.startsWith('NOBLE-ACT-') ? cleanIdempotencyKey : `NOBLE-ACT-${cleanIdempotencyKey}`)
+    : `NOBLE-ACT-${userId}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+
   const result = await db.$transaction(async (tx) => {
-    // 0. If user-initiated activation, verify and debit wallet coins atomically
+    // 0. If user-initiated activation, enforce idempotency, lock wallet, and debit coins atomically
     if (grantType === 'USER_ACTIVATION') {
+      if (cleanIdempotencyKey && tx.walletLedger?.findFirst) {
+        const existingLedger = await tx.walletLedger.findFirst({
+          where: { referenceId: txRefId },
+        });
+        if (existingLedger) {
+          const existingEnt = await tx.userNobleEntitlement.findFirst({
+            where: { userId, isActive: true },
+            orderBy: { activatedAt: 'desc' },
+          });
+          return {
+            alreadyProcessed: true,
+            entitlement: existingEnt,
+            previousActive: [],
+            previousDeactivatedCount: 0,
+            previousTiers: [],
+          };
+        }
+      }
+
       const cost = NOBLE_TIER_COSTS[canonicalTier.toLowerCase()] || 10000;
-      const wallet = await tx.wallet.findUnique({ where: { userId } });
+      let wallet = await tx.wallet.findUnique({ where: { userId } });
+      if (wallet && typeof tx.$queryRaw === 'function') {
+        const lockedRows = await tx.$queryRaw`
+          SELECT id, "coinBalance" FROM "Wallet" WHERE id = ${wallet.id} FOR UPDATE
+        `.catch(() => null);
+        if (Array.isArray(lockedRows) && lockedRows.length > 0) {
+          wallet = { ...wallet, coinBalance: BigInt(lockedRows[0].coinBalance ?? 0n) };
+        }
+      }
+
       if (!wallet || BigInt(wallet.coinBalance) < BigInt(cost)) {
         const error = new Error(`Insufficient coin balance to activate ${displayTitle} Aristocracy. Required: ${cost.toLocaleString()} coins.`);
         error.statusCode = 400;
@@ -368,10 +402,15 @@ export async function activateNobleTier(
           walletId: wallet.id,
           transactionType: 'SWAP',
           coinDelta: -BigInt(cost),
-          balanceBefore: { coinBalance: balBefore },
-          balanceAfter: { coinBalance: balAfter },
-          reason: `Noble rank activation: ${displayTitle}`,
-          metadata: { nobleTier: canonicalTier, cost, durationDays },
+          balanceBefore: { coins: balBefore },
+          balanceAfter: {
+            coins: balAfter,
+            reason: `Noble rank activation: ${displayTitle}`,
+            nobleTier: canonicalTier,
+            cost,
+            durationDays,
+          },
+          referenceId: txRefId,
         },
       });
     }
@@ -425,6 +464,11 @@ export async function activateNobleTier(
       previousTiers: previousActive.map((p) => p.nobleTier),
     };
   }, { timeout: 15000, maxWait: 10000 });
+
+  if (result.alreadyProcessed) {
+    const existingActive = await getActiveNoble(userId, { checkExpiry: false }, db);
+    return { ...existingActive, alreadyProcessed: true };
+  }
 
   // Non-blocking audit log outside transaction
   logAudit({
@@ -481,6 +525,22 @@ export async function activateNobleTier(
       socketEmitter.emitToUser(userId, 'user:profile_updated', { userId, profile: payload });
       if (typeof socketEmitter.broadcastGlobal === 'function') {
         socketEmitter.broadcastGlobal('room:user_noble_updated', payload);
+      }
+      // Keep active Socket.IO user session metadata synchronized immediately
+      const io = socketEmitter.getSocketServerInstance?.();
+      if (io?.sockets?.sockets) {
+        for (const [, sock] of io.sockets.sockets) {
+          if (String(sock.userId || sock.user?.id || '') === String(userId)) {
+            if (sock.user) {
+              sock.user.nobleRank = displayTitle;
+              sock.user.nobleTitle = displayTitle;
+            }
+            if (sock.data?.user) {
+              sock.data.user.nobleRank = displayTitle;
+              sock.data.user.nobleTitle = displayTitle;
+            }
+          }
+        }
       }
     }
   } catch (_) {}
@@ -564,6 +624,22 @@ export async function revokeActiveNoble(
       socketEmitter.emitToUser(userId, 'user:profile_updated', { userId, profile: payload });
       if (typeof socketEmitter.broadcastGlobal === 'function') {
         socketEmitter.broadcastGlobal('room:user_noble_updated', payload);
+      }
+      // Clear active Socket.IO user session noble metadata immediately
+      const io = socketEmitter.getSocketServerInstance?.();
+      if (io?.sockets?.sockets) {
+        for (const [, sock] of io.sockets.sockets) {
+          if (String(sock.userId || sock.user?.id || '') === String(userId)) {
+            if (sock.user) {
+              sock.user.nobleRank = null;
+              sock.user.nobleTitle = null;
+            }
+            if (sock.data?.user) {
+              sock.data.user.nobleRank = null;
+              sock.data.user.nobleTitle = null;
+            }
+          }
+        }
       }
     }
   } catch (_) {}

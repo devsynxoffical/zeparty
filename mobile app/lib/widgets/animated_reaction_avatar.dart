@@ -274,45 +274,52 @@ class _AnimatedReactionAvatarState extends State<AnimatedReactionAvatar>
                   ),
                 ),
               if (_isAnimating && _currentEmoji != null && emojiOpacity > 0.0)
-                Positioned(
-                  top: -avatarDiameter * 0.55 + floatOffset,
-                  child: Transform.scale(
-                    scale: emojiScale,
-                    child: Opacity(
-                      opacity: emojiOpacity.clamp(0.0, 1.0),
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFFE040FB).withValues(alpha: 0.5 * emojiOpacity),
-                              blurRadius: 14,
-                              spreadRadius: 2,
-                            ),
-                          ],
-                        ),
-                        child: _currentEmoji!.startsWith('assets/')
-                            ? Image.asset(
-                                _currentEmoji!,
-                                width: emojiFontSize,
-                                height: emojiFontSize,
-                                fit: BoxFit.contain,
-                              )
-                            : _currentEmoji!.startsWith('http')
-                                ? Image.network(
-                                    _currentEmoji!,
-                                    width: emojiFontSize,
-                                    height: emojiFontSize,
-                                    fit: BoxFit.contain,
-                                  )
-                                : Text(
-                                    _currentEmoji!,
-                                    style: TextStyle(
-                                      fontSize: emojiFontSize,
-                                      height: 1.0,
+                Positioned.fill(
+                  child: Center(
+                    child: Transform.scale(
+                      scale: emojiScale,
+                      child: Opacity(
+                        opacity: emojiOpacity.clamp(0.0, 1.0),
+                        child: Container(
+                          width: avatarDiameter,
+                          height: avatarDiameter,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFFE040FB).withValues(alpha: 0.45 * emojiOpacity),
+                                blurRadius: 12,
+                                spreadRadius: 1,
+                              ),
+                            ],
+                          ),
+                          child: _currentEmoji!.startsWith('assets/')
+                              ? Image.asset(
+                                  _currentEmoji!,
+                                  width: avatarDiameter * 1.15,
+                                  height: avatarDiameter * 1.15,
+                                  fit: BoxFit.contain,
+                                )
+                              : _currentEmoji!.startsWith('http')
+                                  ? Image.network(
+                                      _currentEmoji!,
+                                      width: avatarDiameter * 1.15,
+                                      height: avatarDiameter * 1.15,
+                                      fit: BoxFit.contain,
+                                    )
+                                  : FittedBox(
+                                      fit: BoxFit.contain,
+                                      child: Text(
+                                        _currentEmoji!,
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          fontSize: avatarDiameter,
+                                          height: 1.0,
+                                        ),
+                                      ),
                                     ),
-                                  ),
+                        ),
                       ),
                     ),
                   ),

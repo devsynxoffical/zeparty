@@ -42,12 +42,13 @@ class EmojiReactionOverlay extends StatelessWidget {
             clipBehavior: Clip.none,
             children: activeReactions.map((reaction) {
               Offset? startPos;
+              double? measuredAnchorDiameter;
 
               if (isLiveRoom) {
                 // In live rooms, center reaction by its visual center on the central live room stage
                 startPos = liveStageCenter;
               } else {
-                // Audio Party Room: Strictly seat-anchored rendering above mic seat
+                // Audio Party Room: Strictly seat-anchored rendering centered over sender's mic seat
                 int? effectiveSeatId = reaction.seatId;
 
                 // Fallback: If seatId is not in the reaction payload, resolve via LivePartyProvider
@@ -64,41 +65,53 @@ class EmojiReactionOverlay extends StatelessWidget {
                     effectiveSeatId = occupant?.seatNumber;
 
                     if (effectiveSeatId == null) {
-                      final isHost = partyProv.isHost ||
+                      // Bug #12 fix: check whether SENDER (not local viewer) is the host
+                      final senderIsHost =
                           partyProv.activeRoom?.host.id == reaction.senderId ||
                           partyProv.activeRoom?.creatorUserId == reaction.senderId ||
                           (partyProv.activeRoom?.host.username.isNotEmpty == true &&
                            partyProv.activeRoom?.host.username.toLowerCase() == reaction.senderId.toLowerCase()) ||
                           (partyProv.activeRoom?.host.publicUserId.isNotEmpty == true &&
                            partyProv.activeRoom?.host.publicUserId == reaction.senderId);
-                      if (isHost) {
+                      if (senderIsHost) {
                         effectiveSeatId = 0;
                       }
                     }
                   } catch (_) {}
                 }
 
-                // 1. Try position by seatId anchor (party_seat_{seatId})
+                // 1. Try position & diameter by seatId anchor (party_seat_{seatId})
                 if (effectiveSeatId != null) {
-                  startPos = provider.getAnchorPosition('party_seat_$effectiveSeatId');
+                  final seatKey = 'party_seat_$effectiveSeatId';
+                  startPos = provider.getAnchorPosition(seatKey);
+                  if (startPos != null) {
+                    measuredAnchorDiameter = provider.getAnchorSize(seatKey);
+                  }
                 }
 
-                // 2. Try position by senderId anchor
-                startPos ??= provider.getAnchorPosition('user_${reaction.senderId}');
+                // 2. Try position & diameter by senderId anchor
+                if (startPos == null) {
+                  final userKey = 'user_${reaction.senderId}';
+                  startPos = provider.getAnchorPosition(userKey);
+                  if (startPos != null) {
+                    measuredAnchorDiameter = provider.getAnchorSize(userKey);
+                  }
+                }
 
                 // 3. Fallback for unseated audience viewers: render on live stage center
                 startPos ??= liveStageCenter;
               }
 
+              // Bug #12 fix: scale audio-party emoji to match the exact local mic DP diameter
+              // consistently on both sender and remote devices (never 28px tiny or 140px oversized).
+              final bool isSeatAnchored = !isLiveRoom && startPos != liveStageCenter;
               final double reactionSize = isLiveRoom
                   ? (size.width * 0.35).clamp(120.0, 140.0)
-                  : 28.0;
+                  : isSeatAnchored
+                      ? (measuredAnchorDiameter ?? 56.0).clamp(44.0, 84.0)
+                      : 56.0;
 
-              // In Audio Party Room, render compact reaction centered over sender's mic avatar
-              final bool isSeatAnchored = !isLiveRoom && startPos != liveStageCenter;
-              final double topPos = isSeatAnchored
-                  ? (startPos.dy - (reactionSize / 2))
-                  : (startPos.dy - (reactionSize / 2));
+              final double topPos = startPos.dy - (reactionSize / 2);
 
               return Positioned(
                 left: startPos.dx - (reactionSize / 2),
