@@ -207,7 +207,6 @@ class NobleBadgeHelper {
       for (int i = 16; i >= 1; i--) {
         if (lower.contains('svip $i') || lower.contains('svip$i')) {
           if (i == 1) return 'assets/svip/svip1_badge.webp';
-          if (i == 7) return 'assets/svip/svip7_profilecard.webp';
           return 'assets/svip/svip${i}_card.webp';
         }
       }

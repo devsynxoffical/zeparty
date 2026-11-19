@@ -51,8 +51,7 @@ void main() {
       expect(cardData.isLight, isTrue);
       expect(cardData.primaryTextColor, equals(const Color(0xFF1A162B)));
       expect(cardData.secondaryTextColor, equals(const Color(0xFF534C64)));
-      // Custom cards use transparent background (the artwork IS the container)
-      expect(cardData.cardBackgroundColor, equals(Colors.transparent));
+      expect(cardData.cardBackgroundColor, equals(const Color(0xFFFAF8F5)));
     });
 
     // 3. SVIP card contains all applicable profile sections
@@ -68,12 +67,11 @@ void main() {
       final cardData = ProfileCardHelper.resolve(user: svipUser);
       expect(cardData.isDefault, isFalse);
       expect(cardData.hasCustomCard, isTrue);
-      expect(cardData.assetPath, contains('svip7_profilecard.webp'));
+      expect(cardData.assetPath, contains('svip7_card.webp'));
       expect(cardData.isLight, isTrue);
       expect(cardData.primaryTextColor, equals(const Color(0xFF1A162B)));
       expect(cardData.secondaryTextColor, equals(const Color(0xFF534C64)));
-      // Custom cards use transparent background (the artwork IS the container)
-      expect(cardData.cardBackgroundColor, equals(Colors.transparent));
+      expect(cardData.cardBackgroundColor, equals(const Color(0xFFFAF8F5)));
     });
 
     // 4. Medal section is inside the card
