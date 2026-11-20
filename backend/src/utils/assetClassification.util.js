@@ -157,6 +157,19 @@ export function isRestrictedSpecialAsset(asset) {
     }
   }
 
+  // 9. Mystery-exclusive items (Issue 09)
+  if (
+    id === 'car_phantom' ||
+    id === 'frame_zp139' ||
+    id.startsWith('mystery_') ||
+    id.includes('mystery') ||
+    name.includes('mystery') ||
+    name.includes('phantom hypercar') ||
+    name.includes('mystic wings')
+  ) {
+    return true;
+  }
+
   return false;
 }
 
@@ -194,6 +207,12 @@ export function getPrismaRestrictedAssetWhereClauses() {
     { name: { contains: 'BD Director', mode: 'insensitive' } },
     { name: { contains: 'Business Development', mode: 'insensitive' } },
     { minNobleRankRequired: { not: null } },
+    { id: 'car_phantom' },
+    { id: 'frame_zp139' },
+    { id: { startsWith: 'mystery_' } },
+    { name: { contains: 'Phantom Hypercar', mode: 'insensitive' } },
+    { name: { contains: 'Mystic Wings', mode: 'insensitive' } },
+    { name: { contains: 'Mystery', mode: 'insensitive' } },
   ];
 }
 

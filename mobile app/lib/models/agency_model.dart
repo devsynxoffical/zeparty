@@ -31,6 +31,8 @@ class AgencyModel {
     required this.createdAt,
   });
 
+  String get displayAgencyId => ownerUserId.isNotEmpty ? ownerUserId : id;
+
   AgencyModel copyWith({
     String? id,
     String? name,
@@ -82,20 +84,33 @@ class AgencyModel {
         'createdAt': createdAt.toIso8601String(),
       };
 
-  factory AgencyModel.fromJson(Map<String, dynamic> json) => AgencyModel(
-        id: json['id'] ?? '',
-        name: json['name'] ?? '',
-        logoUrl: json['logoUrl'] ?? '',
-        description: json['description'] ?? '',
-        ownerUserId: json['ownerUserId'] ?? '',
-        ownerName: json['ownerName'] ?? '',
-        status: json['status'] ?? 'Active',
-        totalHosts: json['totalHosts'] ?? 0,
-        totalMembers: json['totalMembers'] ?? 0,
-        cycle15DayId: json['cycle15DayId'] ?? '',
-        pendingBalanceUsd: (json['pendingBalanceUsd'] ?? 0).toDouble(),
-        availableBalanceUsd: (json['availableBalanceUsd'] ?? 0).toDouble(),
-        countryCode: json['countryCode'] ?? 'GLOBAL',
-        createdAt: json['createdAt'] != null ? DateTime.parse(json['createdAt']) : DateTime.now(),
-      );
+  factory AgencyModel.fromJson(Map<String, dynamic> json) {
+    final owner = json['owner'] is Map<String, dynamic> ? json['owner'] as Map<String, dynamic> : null;
+    final ownerProf = owner != null && owner['profile'] is Map<String, dynamic> ? owner['profile'] as Map<String, dynamic> : null;
+    final counts = json['_count'] is Map<String, dynamic> ? json['_count'] as Map<String, dynamic> : null;
+
+    final resolvedName = (json['name'] ?? json['agencyName'] ?? '').toString();
+    final resolvedOwnerId = (json['displayAgencyId'] ?? json['ownerUserId'] ?? owner?['username'] ?? ownerProf?['publicUserId'] ?? owner?['id'] ?? '').toString();
+    final resolvedOwnerName = (json['ownerName'] ?? ownerProf?['displayName'] ?? owner?['username'] ?? 'Agency Owner').toString();
+    final resolvedLogo = (json['logoUrl'] ?? owner?['avatarUrl'] ?? ownerProf?['avatarUrl'] ?? '').toString();
+    final hostCount = int.tryParse(json['totalHosts']?.toString() ?? counts?['hosts']?.toString() ?? counts?['members']?.toString() ?? '0') ?? 0;
+    final memberCount = int.tryParse(json['totalMembers']?.toString() ?? counts?['members']?.toString() ?? '0') ?? 0;
+
+    return AgencyModel(
+      id: json['id']?.toString() ?? '',
+      name: resolvedName,
+      logoUrl: resolvedLogo,
+      description: (json['description'] ?? '').toString(),
+      ownerUserId: resolvedOwnerId,
+      ownerName: resolvedOwnerName,
+      status: (json['status'] ?? 'Active').toString(),
+      totalHosts: hostCount,
+      totalMembers: memberCount,
+      cycle15DayId: (json['cycle15DayId'] ?? '').toString(),
+      pendingBalanceUsd: (json['pendingBalanceUsd'] ?? 0).toDouble(),
+      availableBalanceUsd: (json['availableBalanceUsd'] ?? 0).toDouble(),
+      countryCode: (json['countryCode'] ?? 'GLOBAL').toString(),
+      createdAt: json['createdAt'] != null ? DateTime.parse(json['createdAt'].toString()) : DateTime.now(),
+    );
+  }
 }

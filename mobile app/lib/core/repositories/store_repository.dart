@@ -19,15 +19,6 @@ class StoreRepository {
       priceCoins: 120000,
       durationDays: 30,
     ),
-    StoreItemModel(
-      id: 'car_phantom',
-      name: 'Phantom Hypercar',
-      categoryId: 'Cars',
-      assetType: 'CAR_MOUNT',
-      imageUrl: 'assets/animations/mystery_entry.webp',
-      priceCoins: 500000,
-      durationDays: 30,
-    ),
 
     // ─── AVATAR FRAMES (Drive Store Collection ZP-134 .. ZP-143) ───
     StoreItemModel(
@@ -73,15 +64,6 @@ class StoreRepository {
       assetType: 'AVATAR_FRAME',
       imageUrl: 'assets/store/ZP-138_avatar-frames_frame.webp',
       priceCoins: 60000,
-      durationDays: 30,
-    ),
-    StoreItemModel(
-      id: 'frame_zp139',
-      name: 'Mystic Wings Frame',
-      categoryId: 'Frame',
-      assetType: 'AVATAR_FRAME',
-      imageUrl: 'assets/store/ZP-139_avatar-frames_frame.webp',
-      priceCoins: 40000,
       durationDays: 30,
     ),
     StoreItemModel(

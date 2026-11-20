@@ -974,6 +974,19 @@ export async function equipAsset(userId, userAssetId, { ipAddress } = {}, db = p
 
   const assetType = userAsset.asset?.assetType || 'FRAME';
 
+  if (
+    assetType === 'RELATIONSHIP_CARD' ||
+    userAsset.asset?.assetCategory === 'RELATIONSHIP_CARD' ||
+    userAsset.asset?.name?.toLowerCase().includes('relationship card') ||
+    userAsset.asset?.name?.toLowerCase().includes('friend card') ||
+    userAsset.asset?.name?.toLowerCase().includes('cp card')
+  ) {
+    const error = new Error('Relationship cards cannot be equipped as cosmetic profile items. Send it to a friend from Backpack.');
+    error.statusCode = 400;
+    error.code = 'RELATIONSHIP_CARD_NOT_EQUIPPABLE';
+    throw error;
+  }
+
   // Execute in transaction to ensure single-equipped exclusivity per assetType
   const updatedUserAsset = await db.$transaction(async (tx) => {
     if (assetType) {

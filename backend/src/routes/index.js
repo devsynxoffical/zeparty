@@ -17,6 +17,7 @@ import { adminSellerRouter, userSellerRouter } from './seller.routes.js';
 import { adminMerchantRouter, userMerchantRouter } from './merchant.routes.js';
 import { adminGiftRouter, userGiftRouter } from './gift.routes.js';
 import { adminAssetRouter, userBackpackRouter } from './asset.routes.js';
+import mysteryRouter from './mystery.routes.js';
 import { adminStoreRouter, userStoreRouter } from './store.routes.js';
 import { adminUserRouter, userProfileRouter } from './user.routes.js';
 import { adminRoomRouter, userRoomRouter } from './room.routes.js';
@@ -207,6 +208,8 @@ router.use('/gifts', userGiftRouter);
 
 router.use('/v1/store', userStoreRouter);
 router.use('/store', userStoreRouter);
+router.use('/v1/mystery', mysteryRouter);
+router.use('/mystery', mysteryRouter);
 
 router.use('/v1/users/me/assets', userBackpackRouter);
 router.use('/users/me/assets', userBackpackRouter);

@@ -39,23 +39,41 @@ export async function getPublicAgencies(req, res, next) {
 
 export async function joinAgency(req, res, next) {
   try {
-    const { agencyCode } = req.body;
+    const { agencyCode, agencyId, ownerUserId } = req.body;
     const userId = req.auth.userId;
     const ipAddress = req.ip || req.headers['x-forwarded-for'];
 
-    if (!agencyCode) {
-      return res.status(400).json({
-        success: false,
-        message: 'Agency code is required',
-        error: { code: 'MISSING_AGENCY_CODE' },
+    let agency = null;
+    if (agencyId) {
+      agency = await agencyRepository.findAgencyById(agencyId);
+    }
+    if (!agency && agencyCode) {
+      agency = await agencyRepository.findAgencyByCode(agencyCode);
+    }
+    if (!agency && (ownerUserId || agencyId || agencyCode)) {
+      const searchKey = String(ownerUserId || agencyId || agencyCode).trim();
+      agency = await prisma.agency.findFirst({
+        where: {
+          OR: [
+            { id: searchKey },
+            { agencyCode: searchKey },
+            { agencyName: { equals: searchKey, mode: 'insensitive' } },
+            { ownerUserId: searchKey },
+            { owner: { username: searchKey } },
+          ],
+          status: 'ACTIVE',
+        },
+        include: {
+          owner: { select: { id: true, username: true, avatarUrl: true, profile: true } },
+          _count: { select: { hosts: true, members: true } },
+        },
       });
     }
 
-    const agency = await agencyRepository.findAgencyByCode(agencyCode);
     if (!agency || agency.status !== 'ACTIVE') {
       return res.status(404).json({
         success: false,
-        message: 'Active agency with this code not found',
+        message: 'Active agency not found',
         error: { code: 'AGENCY_NOT_FOUND' },
       });
     }
@@ -78,6 +96,15 @@ export async function joinAgency(req, res, next) {
       await prisma.user.update({
         where: { id: userId },
         data: { userType: 'HOST' },
+      });
+    } else {
+      // Ensure host is active audio host
+      await prisma.hostProfile.update({
+        where: { id: host.id },
+        data: {
+          hostStatus: 'ACTIVE',
+          hostType: host.hostType === 'LIVE_HOST' ? 'BOTH' : host.hostType,
+        },
       });
     }
 

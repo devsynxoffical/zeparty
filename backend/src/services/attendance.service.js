@@ -324,7 +324,7 @@ export async function getHostAttendanceSummary(hostUserId, db = prisma) {
   ]);
 
   const verifiedMinutes = todayAttendance?.verifiedMinutes ? Math.floor(todayAttendance.verifiedMinutes) : 0;
-  const isTodayValid = Boolean(todayAttendance?.isValidDay);
+  const isTodayValid = Boolean(todayAttendance?.isValidDay || verifiedMinutes >= 120);
   const completedValidDays = Number(hostProfile?.targetDaysAchieved || 0);
 
   return {

@@ -398,6 +398,18 @@ export async function recordGiftAttribution(
       where: { id: targetRoomId },
       select: { id: true, roomType: true },
     }).catch(() => null);
+
+    if (!resolvedRoom) {
+      resolvedRoom = await db.room.findFirst({
+        where: {
+          OR: [
+            { id: { startsWith: targetRoomId, mode: 'insensitive' } },
+            { agoraChannelName: targetRoomId },
+          ],
+        },
+        select: { id: true, roomType: true },
+      }).catch(() => null);
+    }
   }
 
   let resolvedGift = gift;
@@ -446,33 +458,30 @@ export async function recordGiftAttribution(
       targetScope = 'NONE';
       targetCoins = 0n;
     } else {
-      const isLiveBroadcast = (resolvedRoom.roomType === 'LIVE_VIDEO');
-      const isPartyRoom = (resolvedRoom.roomType === 'AUDIO_PARTY');
+      const rType = String(resolvedRoom?.roomType || '').toUpperCase();
+      const isLiveBroadcast = rType === 'LIVE_VIDEO' || rType.includes('LIVE') || rType.includes('VIDEO') || (hostType === 'LIVE_HOST' && !rType.includes('AUDIO'));
+      const isPartyRoom = rType === 'AUDIO_PARTY' || rType.includes('AUDIO') || rType.includes('PARTY') || (hostType === 'AUDIO_HOST');
 
-      if (isLiveBroadcast) {
-        if (hostType === 'LIVE_HOST' || hostType === 'BOTH') {
-          targetScope = 'LIVE_HOST';
-          agencyId = null; // Direct live hosts never contribute to agency aggregates
-          targetCoins = contrib.targetCoins;
-          status = 'ATTRIBUTED';
-        } else {
-          // Recipient is AUDIO_HOST only in a LIVE_VIDEO broadcast -> no target credit
-          targetScope = 'NONE';
-          targetCoins = 0n;
-          status = 'INELIGIBLE_MODE_MISMATCH';
-        }
-      } else if (isPartyRoom) {
-        if (hostType === 'AUDIO_HOST' || hostType === 'BOTH') {
-          targetScope = 'AUDIO_HOST';
-          agencyId = resolvedHost.agencyId || null;
-          targetCoins = contrib.targetCoins;
-          status = 'ATTRIBUTED';
-        } else {
-          // Recipient is LIVE_HOST only in an AUDIO_PARTY room -> no target credit
-          targetScope = 'NONE';
-          targetCoins = 0n;
-          status = 'INELIGIBLE_MODE_MISMATCH';
-        }
+      if (isPartyRoom && (hostType === 'AUDIO_HOST' || hostType === 'BOTH')) {
+        targetScope = 'AUDIO_HOST';
+        agencyId = resolvedHost.agencyId || null;
+        targetCoins = contrib.targetCoins;
+        status = 'ATTRIBUTED';
+      } else if (isLiveBroadcast && (hostType === 'LIVE_HOST' || hostType === 'BOTH')) {
+        targetScope = 'LIVE_HOST';
+        agencyId = null; // Direct live hosts never contribute to agency aggregates
+        targetCoins = contrib.targetCoins;
+        status = 'ATTRIBUTED';
+      } else if (hostType === 'AUDIO_HOST') {
+        targetScope = 'AUDIO_HOST';
+        agencyId = resolvedHost.agencyId || null;
+        targetCoins = contrib.targetCoins;
+        status = 'ATTRIBUTED';
+      } else if (hostType === 'LIVE_HOST') {
+        targetScope = 'LIVE_HOST';
+        agencyId = null;
+        targetCoins = contrib.targetCoins;
+        status = 'ATTRIBUTED';
       } else {
         targetScope = 'NONE';
         targetCoins = 0n;

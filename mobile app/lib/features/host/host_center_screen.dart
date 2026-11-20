@@ -38,6 +38,7 @@ class _HostCenterScreenState extends State<HostCenterScreen>
 
   void _loadData() {
     if (!mounted) return;
+    context.read<AgencyProvider>().fetchMyHostProfile();
     context.read<AgencyProvider>().fetchAllAgencies();
     context.read<AgencyProvider>().fetchEligibility();
     context.read<AgencyProvider>().fetchHostTargetSummary();
@@ -282,7 +283,8 @@ class _HostCenterScreenState extends State<HostCenterScreen>
                         children: [
                           CircleAvatar(
                             radius: 24,
-                            backgroundImage: NetworkImage(agency.logoUrl),
+                            backgroundImage: agency.logoUrl.isNotEmpty ? NetworkImage(agency.logoUrl) : null,
+                            child: agency.logoUrl.isEmpty ? const Icon(Icons.business, color: Colors.white70) : null,
                           ),
                           const SizedBox(width: 14),
                           Expanded(
@@ -299,7 +301,7 @@ class _HostCenterScreenState extends State<HostCenterScreen>
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  'ID: ${agency.id} • ${agency.totalHosts} Hosts',
+                                  'ID: ${agency.displayAgencyId} • ${agency.totalHosts} Hosts',
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: AppColors.getTextSecondary(isDark),
@@ -333,21 +335,22 @@ class _HostCenterScreenState extends State<HostCenterScreen>
                             ),
                             onPressed: (isPendingThis || hasRoleConflict)
                                 ? null
-                                : () {
-                                    final res = agencyProv
+                                : () async {
+                                    final res = await agencyProv
                                         .submitHostJoinRequest(
                                           agencyId: agency.id,
                                           userId: authUser.id,
                                           userName: authUser.name,
                                           userAvatar: authUser.avatarUrl,
                                         );
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(res),
-                                        backgroundColor: AppColors.success,
-                                      ),
-                                    );
-                                    setState(() {});
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text(res),
+                                          backgroundColor: AppColors.success,
+                                        ),
+                                      );
+                                    }
                                   },
                             child: Text(isPendingThis ? 'Pending' : 'Join'),
                           ),
@@ -364,23 +367,24 @@ class _HostCenterScreenState extends State<HostCenterScreen>
     }
 
     final targetSummary = agencyProv.targetSummary;
-    final currentLevel =
-        targetSummary?.currentTier?.level ??
-        AgencyHostPolicy.getLevelForDiamonds(audioHost.achievedDiamonds).level;
-    final achievedCoins = targetSummary?.achievedCoins ?? 0;
-    final nextTargetCoins = targetSummary?.nextTargetCoins ?? 100000;
-    final remainingCoins =
-        targetSummary?.remainingCoins ??
-        (nextTargetCoins > achievedCoins ? nextTargetCoins - achievedCoins : 0);
-    final progressPct =
-        targetSummary?.progressPercent ??
-        (nextTargetCoins > 0
-            ? (achievedCoins / nextTargetCoins).clamp(0.0, 1.0)
-            : 1.0);
-
     final currentPolicy = AgencyHostPolicy.getLevelForDiamonds(
       audioHost.achievedDiamonds,
     );
+
+    final currentLevel =
+        targetSummary?.currentTier?.level ??
+        currentPolicy.level;
+    final achievedCoins = targetSummary?.achievedCoins ?? 0;
+    final effectiveTarget = (targetSummary?.nextTargetCoins != null && targetSummary!.nextTargetCoins > 0)
+        ? targetSummary.nextTargetCoins
+        : (currentPolicy.diamondTarget > 0 ? currentPolicy.diamondTarget : 25000);
+    final remainingCoins = (targetSummary?.remainingCoins != null && targetSummary!.remainingCoins > 0)
+        ? targetSummary.remainingCoins
+        : (effectiveTarget > achievedCoins ? effectiveTarget - achievedCoins : 0);
+    final progressPct = targetSummary?.progressPercent ??
+        (effectiveTarget > 0
+            ? (achievedCoins / effectiveTarget).clamp(0.0, 1.0)
+            : 0.0);
 
     return Scaffold(
       backgroundColor: AppColors.getBackground(isDark),
@@ -554,10 +558,10 @@ class _HostCenterScreenState extends State<HostCenterScreen>
                         ),
                         Text(
                           targetSummary?.nextTier != null
-                              ? 'Next Target: $nextTargetCoins 🪙'
-                              : (nextTargetCoins > achievedCoins
-                                    ? 'Target: $nextTargetCoins 🪙'
-                                    : 'MAX LEVEL'),
+                              ? 'Next Target: $effectiveTarget 🪙'
+                              : (effectiveTarget > achievedCoins
+                                    ? 'Target: $effectiveTarget 🪙'
+                                    : (currentLevel >= 25 ? 'MAX LEVEL' : 'Target: $effectiveTarget 🪙')),
                           style: const TextStyle(
                             color: Colors.amberAccent,
                             fontSize: 11,
@@ -749,33 +753,38 @@ class _HostCenterScreenState extends State<HostCenterScreen>
                         ],
                       ),
                       const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Icon(
-                            audioHost.isTodayValid
-                                ? Icons.check_circle_rounded
-                                : Icons.access_time_filled_rounded,
-                            color: audioHost.isTodayValid
-                                ? Colors.greenAccent
-                                : Colors.orangeAccent,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              audioHost.isTodayValid
-                                  ? 'Today Status: VALID (${audioHost.dailyOnlineMinutes} mins completed)'
-                                  : 'Today Status: IN PROGRESS (${audioHost.dailyOnlineMinutes} / 120 mins)',
-                              style: TextStyle(
-                                color: audioHost.isTodayValid
+                      Builder(
+                        builder: (_) {
+                          final isTodayDone = audioHost.isTodayValid || audioHost.dailyOnlineMinutes >= 120;
+                          return Row(
+                            children: [
+                              Icon(
+                                isTodayDone
+                                    ? Icons.check_circle_rounded
+                                    : Icons.access_time_filled_rounded,
+                                color: isTodayDone
                                     ? Colors.greenAccent
                                     : Colors.orangeAccent,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12,
+                                size: 20,
                               ),
-                            ),
-                          ),
-                        ],
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  isTodayDone
+                                      ? 'Today Status: VALID (${audioHost.dailyOnlineMinutes >= 120 ? audioHost.dailyOnlineMinutes : 120} mins completed)'
+                                      : 'Today Status: IN PROGRESS (${audioHost.dailyOnlineMinutes} / 120 mins)',
+                                  style: TextStyle(
+                                    color: isTodayDone
+                                        ? Colors.greenAccent
+                                        : Colors.orangeAccent,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
                       ),
                     ],
                   ),

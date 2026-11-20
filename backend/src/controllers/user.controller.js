@@ -1926,6 +1926,19 @@ export async function getUserEquippedMedals(req, res, next) {
   }
 }
 
+export async function getUserSvipHistory(req, res, next) {
+  try {
+    const { id } = req.params;
+    const history = await userService.getUserSvipHistory(id);
+    return res.status(200).json({
+      success: true,
+      data: history,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function setMyEquippedMedals(req, res, next) {
   try {
     const userId = req.user?.id || req.user?.userId;

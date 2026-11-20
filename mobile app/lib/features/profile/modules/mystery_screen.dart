@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../../../providers/wallet_provider.dart';
 import '../../../../providers/mystery_provider.dart';
+import '../../../../providers/auth_provider.dart';
 import '../../../../models/mystery_suit_model.dart';
 import '../../wallet/wallet_screen.dart';
 
@@ -70,6 +71,7 @@ class MysteryScreen extends StatelessWidget {
     if (context.mounted) Navigator.pop(context);
 
     if (success && context.mounted) {
+      context.read<AuthProvider>().refreshCurrentUser();
       showDialog(
         context: context,
         builder: (c) => AlertDialog(

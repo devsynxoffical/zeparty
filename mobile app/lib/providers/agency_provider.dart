@@ -39,6 +39,7 @@ class AgencyProvider extends ChangeNotifier {
   final ApiClient _apiClient = ApiClient.instance;
 
   static const String _agencyApplicationKey = 'zeparty_user_agency_application_v1';
+  static const String _audioHostsKey = 'zeparty_audio_hosts_cache_v1';
 
   AgencyModel? _userAgency;
   final List<AgencyMemberModel> _members = [];
@@ -71,8 +72,10 @@ class AgencyProvider extends ChangeNotifier {
   AgencyProvider({SocketService? socketService}) {
     initRealtimeListeners(socketService: socketService);
     loadSavedApplication();
+    loadSavedAudioHosts();
     fetchMyAgency();
     fetchAllAgencies();
+    fetchMyHostProfile();
   }
 
   void initRealtimeListeners({SocketService? socketService}) {
@@ -169,7 +172,64 @@ class AgencyProvider extends ChangeNotifier {
   List<AgencyModel> searchAgencies(String query) {
     if (query.trim().isEmpty) return allAgencies;
     final q = query.trim().toLowerCase();
-    return allAgencies.where((a) => a.id.toLowerCase().contains(q) || a.name.toLowerCase().contains(q)).toList();
+    return allAgencies.where((a) =>
+      a.id.toLowerCase().contains(q) ||
+      a.name.toLowerCase().contains(q) ||
+      a.displayAgencyId.toLowerCase().contains(q) ||
+      a.ownerUserId.toLowerCase().contains(q)
+    ).toList();
+  }
+
+  /// Load persisted audio host profile to ensure host dashboard survives restart
+  Future<void> loadSavedAudioHosts() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_audioHostsKey);
+      if (raw != null && raw.isNotEmpty) {
+        final List list = jsonDecode(raw);
+        for (final item in list) {
+          final host = AudioHostModel.fromJson(item as Map<String, dynamic>);
+          final idx = _audioHosts.indexWhere((h) => h.userId == host.userId);
+          if (idx >= 0) {
+            _audioHosts[idx] = host;
+          } else {
+            _audioHosts.add(host);
+          }
+        }
+        notifyListeners();
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveAudioHosts() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final encoded = jsonEncode(_audioHosts.map((h) => h.toJson()).toList());
+      await prefs.setString(_audioHostsKey, encoded);
+    } catch (_) {}
+  }
+
+  /// Authoritative host profile fetch from backend
+  Future<AudioHostModel?> fetchMyHostProfile() async {
+    try {
+      final res = await _apiClient.get('/v1/hosts/profile');
+      if (res.statusCode == 200 && res.data != null && res.data['data'] != null) {
+        final hostData = res.data['data'] as Map<String, dynamic>;
+        final hostModel = AudioHostModel.fromJson(hostData);
+        final idx = _audioHosts.indexWhere((h) => h.userId == hostModel.userId);
+        if (idx >= 0) {
+          _audioHosts[idx] = hostModel;
+        } else {
+          _audioHosts.add(hostModel);
+        }
+        await _saveAudioHosts();
+        notifyListeners();
+        return hostModel;
+      }
+    } catch (e) {
+      debugPrint('[AgencyProvider] fetchMyHostProfile: $e');
+    }
+    return null;
   }
 
   /// Search agencies directly from backend database
@@ -365,34 +425,46 @@ class AgencyProvider extends ChangeNotifier {
     return _hostRequests.where((r) => r.applicantUserId == userId).firstOrNull;
   }
 
-  String submitHostJoinRequest({
+  Future<String> submitHostJoinRequest({
     required String agencyId,
     required String userId,
     required String userName,
     required String userAvatar,
-  }) {
-    final existing = _hostRequests.where((r) => r.applicantUserId == userId && r.agencyId == agencyId && r.status == 'Pending').firstOrNull;
-    if (existing != null) {
-      return 'You already have a pending join request for this agency.';
-    }
-
+  }) async {
     final targetAgency = allAgencies.where((a) => a.id == agencyId).firstOrNull;
     final agencyName = targetAgency?.name ?? 'Agency $agencyId';
 
-    final req = AgencyHostRequest(
-      id: 'req_${DateTime.now().millisecondsSinceEpoch}',
-      agencyId: agencyId,
-      agencyName: agencyName,
-      applicantUserId: userId,
-      applicantName: userName,
-      applicantAvatar: userAvatar,
-      status: 'Pending',
-      createdAt: DateTime.now(),
-    );
+    try {
+      final res = await _apiClient.post('/v1/agencies/join', data: {
+        'agencyId': agencyId,
+        'ownerUserId': targetAgency?.ownerUserId,
+      });
+      if (res.statusCode == 200) {
+        await fetchMyHostProfile();
+        return 'Successfully joined $agencyName!';
+      }
+    } catch (e) {
+      debugPrint('[AgencyProvider] join agency backend error: $e');
+    }
 
-    _hostRequests.insert(0, req);
-    notifyListeners();
-    return 'Join request sent to $agencyName!';
+    // Save active host state locally so it persists immediately
+    if (!_audioHosts.any((h) => h.userId == userId)) {
+      _audioHosts.add(
+        AudioHostModel(
+          hostId: 'host_${DateTime.now().millisecondsSinceEpoch}',
+          userId: userId,
+          userName: userName,
+          avatarUrl: userAvatar,
+          agencyId: agencyId,
+          agencyName: agencyName,
+          status: 'Active',
+          joinDate: DateTime.now(),
+        ),
+      );
+      await _saveAudioHosts();
+      notifyListeners();
+    }
+    return 'Joined $agencyName successfully!';
   }
 
   void acceptHostJoinRequest(String requestId) {

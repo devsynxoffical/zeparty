@@ -311,8 +311,49 @@ function sanitizeUser(user) {
   }
   const roles = Array.from(new Set(userRoles));
 
+  // Authoritative equipped cosmetics resolution from active UserAsset records
+  const equippedFrameAsset = safeUser.userAssets?.find(
+    (ua) => ua.isEquipped && ua.asset?.assetType === 'FRAME'
+  )?.asset;
+  const equippedBubbleAsset = safeUser.userAssets?.find(
+    (ua) => ua.isEquipped && (ua.asset?.assetType === 'BUBBLE' || ua.asset?.assetType === 'CHAT_BUBBLE')
+  )?.asset;
+  const equippedEntryAsset = safeUser.userAssets?.find(
+    (ua) => ua.isEquipped && (ua.asset?.assetType === 'VEHICLE' || ua.asset?.assetType === 'ENTRY_EFFECT')
+  )?.asset;
+
+  const resolvedAvatarFrame =
+    equippedFrameAsset?.thumbnailUrl ||
+    equippedFrameAsset?.staticFileUrl ||
+    equippedFrameAsset?.animationFileUrl ||
+    safeUser.avatarFrame ||
+    safeUser.profile?.avatarFrame ||
+    '';
+
+  const resolvedChatBubble =
+    equippedBubbleAsset?.thumbnailUrl ||
+    equippedBubbleAsset?.staticFileUrl ||
+    equippedBubbleAsset?.animationFileUrl ||
+    safeUser.chatBubble ||
+    '';
+
+  const resolvedEntryEffect =
+    equippedEntryAsset?.thumbnailUrl ||
+    equippedEntryAsset?.staticFileUrl ||
+    equippedEntryAsset?.animationFileUrl ||
+    safeUser.entryEffect ||
+    '';
+
   return {
     ...safeUser,
+    avatarFrame: resolvedAvatarFrame,
+    equippedFrame: resolvedAvatarFrame,
+    chatBubble: resolvedChatBubble,
+    entryEffect: resolvedEntryEffect,
+    equippedSkinId: safeUser.profile?.equippedSkinId || null,
+    profileSkinUrl: safeUser.profile?.profileSkinUrl || null,
+    equippedProfileCardId: safeUser.profile?.equippedProfileCardId || null,
+    profileCardUrl: safeUser.profile?.profileCardUrl || null,
     coins: coinBal,
     diamonds: diamondBal,
     coinBalance: coinBal,

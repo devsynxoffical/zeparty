@@ -377,9 +377,34 @@ class AuthProvider extends ChangeNotifier {
           ? remoteUser.badge
           : (_currentUser?.badge ?? remoteUser.badge);
 
+      final String? effectiveSkin = (remoteUser.profileSkinUrl?.isNotEmpty == true && remoteUser.profileSkinUrl != 'none')
+          ? remoteUser.profileSkinUrl
+          : _currentUser?.profileSkinUrl;
+
+      final String? effectiveCard = (remoteUser.profileCardUrl?.isNotEmpty == true && remoteUser.profileCardUrl != 'none')
+          ? remoteUser.profileCardUrl
+          : _currentUser?.profileCardUrl;
+
+      final String? effectiveSkinId = (remoteUser.equippedSkinId?.isNotEmpty == true && remoteUser.equippedSkinId != 'none')
+          ? remoteUser.equippedSkinId
+          : _currentUser?.equippedSkinId;
+
+      final String? effectiveCardId = (remoteUser.equippedProfileCardId?.isNotEmpty == true && remoteUser.equippedProfileCardId != 'none')
+          ? remoteUser.equippedProfileCardId
+          : _currentUser?.equippedProfileCardId;
+
+      final String? effectiveAgencyName = remoteUser.agencyName?.isNotEmpty == true
+          ? remoteUser.agencyName
+          : _currentUser?.agencyName;
+
       _currentUser = remoteUser.copyWith(
         avatarFrame: effectiveFrame,
         badge: effectiveBadge,
+        profileSkinUrl: effectiveSkin,
+        profileCardUrl: effectiveCard,
+        equippedSkinId: effectiveSkinId,
+        equippedProfileCardId: effectiveCardId,
+        agencyName: effectiveAgencyName,
       );
       _isAuthenticated = true;
       _isGuest = false;

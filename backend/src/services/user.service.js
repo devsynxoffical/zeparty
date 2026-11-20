@@ -5076,6 +5076,73 @@ export async function setUserEquippedMedals(userId, medalIds, db = prisma) {
   return validIds;
 }
 
+export async function getUserSvipHistory(userId, db = prisma) {
+  if (!userId) return [];
+  let user = await userRepository.findUserById(userId, db).catch(() => null);
+  if (!user) user = await userRepository.findUserByUniqueId(userId, db).catch(() => null);
+  if (!user) return [];
+
+  const canonicalId = user.id;
+
+  const logs = await db.auditLog.findMany({
+    where: {
+      targetEntity: { in: ['UserSVIP', 'UserProfile'] },
+      targetEntityId: canonicalId,
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+  }).catch(() => []);
+
+  const history = [];
+  const seenKeys = new Set();
+
+  for (const log of logs) {
+    let after = null;
+    try {
+      after = typeof log.afterStateJson === 'string' ? JSON.parse(log.afterStateJson) : log.afterStateJson;
+    } catch (_) {}
+
+    const lvl = parseInt(after?.svipLevel || after?.newLevel || 0, 10);
+    if (lvl > 0) {
+      const dt = new Date(log.createdAt);
+      const year = dt.getUTCFullYear();
+      const month = String(dt.getUTCMonth() + 1).padStart(2, '0');
+      const dateLabel = `${year}.${month}`;
+      const dedupeKey = `${log.id}`;
+      if (!seenKeys.has(dedupeKey)) {
+        seenKeys.add(dedupeKey);
+        history.push({
+          id: log.id,
+          level: lvl,
+          badgeName: `SVIP ${lvl}`,
+          badgeAsset: `assets/svip/svip${lvl}_badge.png`,
+          badgeUrl: `/assets/svip/svip${lvl}_badge.png`,
+          activatedAt: dt.toISOString(),
+          dateLabel,
+        });
+      }
+    }
+  }
+
+  const currentLvl = user.profile?.svipLevel || 0;
+  if (currentLvl > 0 && history.length === 0) {
+    const dt = new Date(user.profile?.updatedAt || user.createdAt || Date.now());
+    const year = dt.getUTCFullYear();
+    const month = String(dt.getUTCMonth() + 1).padStart(2, '0');
+    history.push({
+      id: `current_svip_${canonicalId}`,
+      level: currentLvl,
+      badgeName: `SVIP ${currentLvl}`,
+      badgeAsset: `assets/svip/svip${currentLvl}_badge.png`,
+      badgeUrl: `/assets/svip/svip${currentLvl}_badge.png`,
+      activatedAt: dt.toISOString(),
+      dateLabel: `${year}.${month}`,
+    });
+  }
+
+  return history;
+}
+
 export default {
   getUserPresence,
   listUsersForAdmin,

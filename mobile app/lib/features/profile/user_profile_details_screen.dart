@@ -152,9 +152,9 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
   StreamSubscription? _userPresenceSub;
   bool _customCardLoadFailed = false;
 
-  List<Map<String, dynamic>> _receivedGifts = [];
-  bool _isLoadingGifts = false;
-  bool _hasLoadedGifts = false;
+  List<Map<String, dynamic>> _svipHistory = [];
+  bool _isLoadingSvipHistory = false;
+  bool _hasLoadedSvipHistory = false;
 
   List<UserAssetModel> _honorAssets = [];
   bool _isLoadingHonor = false;
@@ -176,17 +176,17 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
     _tabController.addListener(() {
       if (_tabController.index == 2 && !_hasLoadedHonor) {
         _loadHonorAssets();
-      } else if (_tabController.index == 3 && !_hasLoadedGifts) {
-        _loadReceivedGifts();
+      } else if (_tabController.index == 3 && !_hasLoadedSvipHistory) {
+        _loadSvipHistory();
       }
     });
     if (widget.user != null) {
       _user = widget.user;
     }
     _loadUser();
-    _loadReceivedGifts();
     _loadHonorAssets();
     _loadEquippedMedals();
+    _loadSvipHistory();
 
     _userPresenceSub = SocketService.instance.onUserPresence.listen((data) {
       final targetUserId = data['userId']?.toString();
@@ -318,26 +318,51 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
         _user = user ?? _user ?? widget.user;
         _isLoading = false;
       });
-      _loadReceivedGifts();
       _loadHonorAssets();
+      _loadSvipHistory();
     }
   }
 
-  Future<void> _loadReceivedGifts() async {
+  Future<void> _loadSvipHistory() async {
     final targetId = _user?.id ?? widget.userId;
     if (targetId.isEmpty) return;
-    setState(() => _isLoadingGifts = true);
+    setState(() => _isLoadingSvipHistory = true);
     try {
-      final gifts = await SocialRepository.instance.getReceivedGifts(targetId);
-      if (mounted) {
+      final res = await ApiClient.instance.get('/v1/users/$targetId/svip-history');
+      if (res.statusCode == 200 && res.data?['data'] is List) {
+        if (mounted) {
+          setState(() {
+            _svipHistory = List<Map<String, dynamic>>.from(res.data['data']);
+            _isLoadingSvipHistory = false;
+            _hasLoadedSvipHistory = true;
+          });
+        }
+        return;
+      }
+    } catch (_) {}
+
+    if (mounted) {
+      final svipLvl = _user?.svipLevel ?? 0;
+      if (svipLvl > 0) {
+        final now = DateTime.now();
         setState(() {
-          _receivedGifts = gifts;
-          _isLoadingGifts = false;
-          _hasLoadedGifts = true;
+          _svipHistory = [
+            {
+              'level': svipLvl,
+              'badgeName': 'SVIP $svipLvl',
+              'badgeAsset': 'assets/svip/svip${svipLvl}_badge.png',
+              'dateLabel': '${now.year}.${now.month.toString().padLeft(2, '0')}',
+            }
+          ];
+          _isLoadingSvipHistory = false;
+          _hasLoadedSvipHistory = true;
+        });
+      } else {
+        setState(() {
+          _isLoadingSvipHistory = false;
+          _hasLoadedSvipHistory = true;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _isLoadingGifts = false);
     }
   }
 
@@ -5018,7 +5043,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
   }
 
   Widget _buildGloryTab(bool isDark, {ProfileCardData? cardData}) {
-    if (_isLoadingGifts) {
+    if (_isLoadingSvipHistory) {
       return Container(
         padding: const EdgeInsets.symmetric(vertical: 40),
         alignment: Alignment.center,
@@ -5026,7 +5051,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
       );
     }
 
-    if (_receivedGifts.isEmpty) {
+    if (_svipHistory.isEmpty) {
       return Container(
         padding: const EdgeInsets.all(32),
         alignment: Alignment.center,
@@ -5040,14 +5065,14 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                 color: Colors.amber.withValues(alpha: 0.12),
               ),
               child: const Icon(
-                Icons.card_giftcard_rounded,
+                Icons.workspace_premium_rounded,
                 size: 40,
                 color: Colors.amber,
               ),
             ),
             const SizedBox(height: 14),
             Text(
-              'No gifts received yet',
+              'No SVIP history yet',
               style: TextStyle(
                 color: AppColors.getTextPrimary(isDark),
                 fontWeight: FontWeight.bold,
@@ -5056,7 +5081,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
             ),
             const SizedBox(height: 6),
             Text(
-              'Gifts received from other users in rooms and live streams will appear here.',
+              'Lifetime SVIP achievements and activations will appear here.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: AppColors.getTextSecondary(isDark),
@@ -5068,80 +5093,25 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
       );
     }
 
-    final totalCoins = _receivedGifts.fold<int>(
-      0,
-      (sum, g) => sum + (int.tryParse(g['totalCoins']?.toString() ?? '0') ?? 0),
-    );
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Summary Header
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          margin: const EdgeInsets.only(bottom: 14),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: isDark
-                  ? [const Color(0xFF2B1D3D), const Color(0xFF1E142B)]
-                  : [const Color(0xFFEDE7F6), const Color(0xFFD1C4E9)],
-            ),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: const Color(0xFFFFB300).withValues(alpha: 0.3),
-            ),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.stars_rounded, color: Color(0xFFFFB300), size: 18),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Received Gifts (${_receivedGifts.length})',
-                    style: TextStyle(
-                      color: AppColors.getTextPrimary(isDark),
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                    ),
-                  ),
-                ],
-              ),
-              Row(
-                children: [
-                  const Text('🪙 ', style: TextStyle(fontSize: 13)),
-                  Text(
-                    AppFormatters.formatNumber(totalCoins),
-                    style: const TextStyle(
-                      color: Color(0xFFFFD54F),
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-
-        // Gift Grid
+        // Lifetime SVIP Badges Grid (illustrative records; newest first)
         GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
-            mainAxisSpacing: 10,
-            crossAxisSpacing: 10,
-            childAspectRatio: 0.82,
+            crossAxisCount: 4,
+            mainAxisSpacing: 16,
+            crossAxisSpacing: 12,
+            childAspectRatio: 0.72,
           ),
-          itemCount: _receivedGifts.length,
+          itemCount: _svipHistory.length,
           itemBuilder: (context, index) {
-            final gift = _receivedGifts[index];
-            final name = gift['name']?.toString() ?? 'Gift';
-            final iconUrl = gift['iconUrl']?.toString() ?? '';
-            final count = gift['count']?.toString() ?? '1';
-            final coins = int.tryParse(gift['totalCoins']?.toString() ?? '0') ?? 0;
+            final item = _svipHistory[index];
+            final lvl = item['level'] ?? 1;
+            final dateLabel = item['dateLabel']?.toString() ?? '2026.11';
+            final badgeAsset = item['badgeAsset']?.toString() ?? 'assets/svip/svip${lvl}_badge.png';
 
             return Container(
               padding: const EdgeInsets.all(8),
@@ -5161,89 +5131,32 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // Artwork with Quantity Badge
                   Expanded(
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        if (iconUrl.isNotEmpty)
-                          (iconUrl.startsWith('http://') || iconUrl.startsWith('https://'))
-                              ? Image.network(
-                                  iconUrl,
-                                  fit: BoxFit.contain,
-                                  errorBuilder: (_, __, ___) => const Icon(
-                                    Icons.card_giftcard_rounded,
-                                    color: Colors.amber,
-                                    size: 36,
-                                  ),
-                                )
-                              : Image.asset(
-                                  iconUrl,
-                                  fit: BoxFit.contain,
-                                  errorBuilder: (_, __, ___) => const Icon(
-                                    Icons.card_giftcard_rounded,
-                                    color: Colors.amber,
-                                    size: 36,
-                                  ),
-                                )
-                        else
-                          const Icon(
-                            Icons.card_giftcard_rounded,
-                            color: Colors.amber,
-                            size: 36,
-                          ),
-                        Positioned(
-                          top: 0,
-                          right: 0,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 5,
-                              vertical: 1.5,
-                            ),
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                colors: [Color(0xFFFF4081), Color(0xFFF50057)],
-                              ),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              '×$count',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+                    child: Image.asset(
+                      badgeAsset,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => Image.asset(
+                        'assets/svip/svip1_badge.png',
+                        fit: BoxFit.contain,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    'SVIP $lvl',
                     style: TextStyle(
-                      color: AppColors.getTextPrimary(isDark),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white : Colors.black87,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11,
                     ),
                   ),
                   const SizedBox(height: 2),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Text('🪙 ', style: TextStyle(fontSize: 10)),
-                      Text(
-                        AppFormatters.formatNumber(coins),
-                        style: const TextStyle(
-                          color: Color(0xFFFFB300),
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
+                  Text(
+                    dateLabel,
+                    style: TextStyle(
+                      color: isDark ? Colors.white54 : Colors.black45,
+                      fontSize: 10,
+                    ),
                   ),
                 ],
               ),

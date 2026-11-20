@@ -148,6 +148,7 @@ userProfileRouter.get('/:id/received-gifts', optionalAuthenticate, userControlle
 userProfileRouter.get('/:id/honor-assets', optionalAuthenticate, userController.getUserHonorAssets);
 userProfileRouter.get('/:id/medals', optionalAuthenticate, userController.getUserMedals);
 userProfileRouter.get('/:id/equipped-medals', optionalAuthenticate, userController.getUserEquippedMedals);
+userProfileRouter.get('/:id/svip-history', optionalAuthenticate, userController.getUserSvipHistory);
 userProfileRouter.post('/me/equipped-medals', authenticate, userController.setMyEquippedMedals);
 userProfileRouter.post('/:id/equipped-medals', authenticate, userController.setMyEquippedMedals);
 

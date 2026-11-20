@@ -61,6 +61,8 @@ export async function findAgencies(
       { agencyName: { contains: search, mode: 'insensitive' } },
       { agencyCode: { contains: search, mode: 'insensitive' } },
       { owner: { username: { contains: search, mode: 'insensitive' } } },
+      { owner: { id: { contains: search, mode: 'insensitive' } } },
+      { id: { contains: search, mode: 'insensitive' } },
     ];
   }
 
@@ -77,6 +79,7 @@ export async function findAgencies(
             id: true,
             username: true,
             email: true,
+            avatarUrl: true,
             profile: true,
           },
         },
@@ -98,8 +101,23 @@ export async function findAgencies(
     db.agency.count({ where }),
   ]);
 
+  const formattedAgencies = agencies.map((a) => {
+    const displayAgencyId = a.owner?.username || a.ownerUserId || a.id;
+    return {
+      ...a,
+      name: a.agencyName,
+      agencyName: a.agencyName,
+      ownerUserId: displayAgencyId,
+      displayAgencyId,
+      ownerName: a.owner?.profile?.displayName || a.owner?.username || 'Agency Owner',
+      logoUrl: a.owner?.avatarUrl || a.owner?.profile?.avatarUrl || '',
+      totalHosts: a._count?.hosts ?? a._count?.members ?? 0,
+      totalMembers: a._count?.members ?? 0,
+    };
+  });
+
   return {
-    agencies,
+    agencies: formattedAgencies,
     pagination: {
       page,
       limit,

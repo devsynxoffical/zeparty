@@ -983,6 +983,7 @@ export async function sendGift(
             hostProfile,
             gift,
             quantity: qty,
+            roomId: roomId || result.giftTransaction.roomId,
           },
           db
         );

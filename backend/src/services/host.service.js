@@ -509,10 +509,15 @@ export async function getHostProfileByUserId(userId, db = prisma) {
 
   return {
     ...host,
+    hostId: host.id,
+    agencyName: host.agency?.agencyName || host.agency?.name || '',
+    agencyId: host.agency?.id || host.agencyId || '',
+    displayAgencyId: host.agency?.agencyCode || host.agency?.ownerUserId || host.agency?.id || '',
+    dailyOnlineMinutes: attendance.verifiedMinutesToday || attendance.dailyLiveMinutes || 0,
     dailyLiveMinutes: attendance.dailyLiveMinutes,
     verifiedMinutesToday: attendance.verifiedMinutesToday,
     streamingMinutes: attendance.streamingMinutes,
-    isTodayValid: attendance.isTodayValid,
+    isTodayValid: attendance.isTodayValid || (attendance.verifiedMinutesToday >= 120),
     completedValidDays: attendance.completedValidDays,
     validDays: attendance.validDays,
     targetDaysAchieved: attendance.targetDaysAchieved,
