@@ -35,6 +35,8 @@ class AuthProvider extends ChangeNotifier {
   StreamSubscription<Map<String, dynamic>>? _nobleSubscription;
   StreamSubscription<Map<String, dynamic>>? _roleSubscription;
   StreamSubscription<Map<String, dynamic>>? _profileSubscription;
+  StreamSubscription<dynamic>? _relationshipReqSubscription;
+  StreamSubscription<dynamic>? _relationshipInvSubscription;
 
   late final Future<void> _initFuture;
 
@@ -78,6 +80,30 @@ class AuthProvider extends ChangeNotifier {
       final title = data['title']?.toString() ?? '';
       if (action == 'HOST_APPROVED' || action == 'HOST_STATUS_UPDATED' || type == 'HOST_APPLICATION' || title.contains('Host')) {
         refreshCurrentUser();
+      }
+      if (action == 'RELATIONSHIP_INVITATION' || data['category'] == 'Relationship' || title.contains('Relationship Invitation')) {
+        final senderId = data['data']?['senderUserId']?.toString() ?? data['senderUserId']?.toString() ?? data['sourceId']?.toString();
+        if (senderId != null && senderId.isNotEmpty) {
+          receiveMockCpRequest(senderId);
+        }
+      }
+    });
+
+    _relationshipReqSubscription = SocketService.instance.onEvent('relationship:request_received').listen((data) {
+      if (data is Map) {
+        final requesterId = data['requesterId']?.toString() ?? data['senderUserId']?.toString();
+        if (requesterId != null && requesterId.isNotEmpty) {
+          receiveMockCpRequest(requesterId);
+        }
+      }
+    });
+
+    _relationshipInvSubscription = SocketService.instance.onEvent('relationship:invitation_received').listen((data) {
+      if (data is Map) {
+        final senderId = data['senderUserId']?.toString() ?? data['requesterId']?.toString();
+        if (senderId != null && senderId.isNotEmpty) {
+          receiveMockCpRequest(senderId);
+        }
       }
     });
 
@@ -211,6 +237,8 @@ class AuthProvider extends ChangeNotifier {
     _nobleSubscription?.cancel();
     _roleSubscription?.cancel();
     _profileSubscription?.cancel();
+    _relationshipReqSubscription?.cancel();
+    _relationshipInvSubscription?.cancel();
     super.dispose();
   }
 

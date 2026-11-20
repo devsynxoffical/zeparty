@@ -272,7 +272,7 @@ class _RelationshipScreenState extends State<RelationshipScreen> {
                           // Call backend purchase and invitation flow with deductCoins: true
                           await SocialRepository.instance.purchaseAndSendRelationshipCard(
                             recipientUserId: targetUser.id,
-                            cardType: card.type,
+                            cardType: card.id.isNotEmpty ? card.id : card.type,
                             deductCoins: true,
                           );
 
@@ -681,19 +681,35 @@ class _RelationshipScreenState extends State<RelationshipScreen> {
                           children: [
                             IconButton(
                               icon: const Icon(Icons.check_circle, color: Colors.green),
-                              onPressed: () {
+                              onPressed: () async {
+                                try {
+                                  await SocialRepository.instance.respondRelationship(
+                                    targetUserId: reqId,
+                                    accept: true,
+                                  );
+                                } catch (_) {}
                                 auth.acceptCpRequest(reqId);
-                                Navigator.pop(context);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('Relationship established with ${requester.name}!')),
-                                );
+                                if (context.mounted) {
+                                  Navigator.pop(context);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('Relationship established with ${requester.name}!')),
+                                  );
+                                }
                               },
                             ),
                             IconButton(
                               icon: const Icon(Icons.cancel, color: Colors.red),
-                              onPressed: () {
+                              onPressed: () async {
+                                try {
+                                  await SocialRepository.instance.respondRelationship(
+                                    targetUserId: reqId,
+                                    accept: false,
+                                  );
+                                } catch (_) {}
                                 auth.rejectCpRequest(reqId);
-                                Navigator.pop(context);
+                                if (context.mounted) {
+                                  Navigator.pop(context);
+                                }
                               },
                             ),
                           ],

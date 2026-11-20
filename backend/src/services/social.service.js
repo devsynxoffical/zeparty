@@ -1646,18 +1646,37 @@ export async function getEligibleRelationshipFriends(userId, search = '', db = p
  * Module 10: Purchase & Send Relationship Card
  */
 export async function purchaseAndSendRelationshipCard({ senderUserId, recipientUserId, cardType = 'CP_LOVE', deductCoins = true }, db = prisma) {
-  if (senderUserId === recipientUserId) {
+  if (!senderUserId || !recipientUserId) {
+    const error = new Error('Sender and recipient IDs are required.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  // 1. Resolve canonical users for both sender and recipient
+  const senderUser = await socialRepository.resolveCanonicalUser(senderUserId, db);
+  const recipientUser = await socialRepository.resolveCanonicalUser(recipientUserId, db);
+
+  const canonicalSenderId = senderUser?.id || senderUserId;
+  const canonicalRecipientId = recipientUser?.id || recipientUserId;
+
+  if (canonicalSenderId === canonicalRecipientId) {
     const error = new Error('You cannot start a relationship with yourself.');
     error.statusCode = 400;
     throw error;
   }
 
-  // Server-side validation of mutual-follow eligibility
+  if (!recipientUser) {
+    const error = new Error('Target user not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  // 2. Server-side validation of mutual-follow eligibility with canonical IDs
   const isMutual = await db.follow.findFirst({
-    where: { followerId: senderUserId, followingId: recipientUserId, status: 'ACCEPTED' },
+    where: { followerId: canonicalSenderId, followingId: canonicalRecipientId, status: 'ACCEPTED' },
   });
   const isFollowBack = await db.follow.findFirst({
-    where: { followerId: recipientUserId, followingId: senderUserId, status: 'ACCEPTED' },
+    where: { followerId: canonicalRecipientId, followingId: canonicalSenderId, status: 'ACCEPTED' },
   });
   if (!isMutual || !isFollowBack) {
     const error = new Error('Eligibility requirement failed: Both users must mutually follow each other.');
@@ -1665,44 +1684,112 @@ export async function purchaseAndSendRelationshipCard({ senderUserId, recipientU
     throw error;
   }
 
+  // 3. Resolve card safely and case-insensitively from catalog
   const cards = await getRelationshipCardCatalog();
-  const card = cards.find((c) => c.key === cardType || c.id === cardType) || cards[0];
+  const rawKey = String(cardType || '').trim().toUpperCase().replace(/\s+/g, '_');
+  const card = cards.find((c) =>
+    c.id.toLowerCase() === String(cardType).toLowerCase() ||
+    c.key.toUpperCase() === rawKey ||
+    c.name.toLowerCase() === String(cardType).toLowerCase() ||
+    (rawKey === 'FRIEND' && c.key === 'FRIEND') ||
+    (rawKey === 'CP' && c.key === 'CP_LOVE') ||
+    (rawKey === 'BOZUN' && c.key === 'BOZUN') ||
+    (rawKey === 'BEST_FRIEND' && c.key === 'BEST_FRIEND')
+  ) || cards.find((c) => c.key === 'FRIEND') || cards[0];
 
-  // Validate wallet and deduct coins atomically
+  // 4. Validate wallet and deduct coins atomically
   if (deductCoins && card.priceCoins > 0) {
-    const senderWallet = await db.wallet.findUnique({ where: { userId: senderUserId } });
+    const senderWallet = await db.wallet.findUnique({ where: { userId: canonicalSenderId } });
     const currentCoins = BigInt(senderWallet?.coins || 0);
     const requiredCoins = BigInt(card.priceCoins);
     if (currentCoins < requiredCoins) {
-      const error = new Error(`Insufficient coins balance. You need ${card.priceCoins} coins.`);
+      const error = new Error(`Insufficient coins balance. You need ${card.priceCoins} coins. Current balance: ${currentCoins}`);
       error.statusCode = 400;
       throw error;
     }
     await db.wallet.update({
-      where: { userId: senderUserId },
+      where: { userId: canonicalSenderId },
       data: { coins: { decrement: requiredCoins } },
     });
   }
 
-  const recipient = await db.user.findUnique({
-    where: { id: recipientUserId },
-    select: {
-      id: true,
-      username: true,
-      avatarUrl: true,
-      profile: { select: { displayName: true } },
-    },
-  });
+  const senderName = senderUser?.profile?.displayName || senderUser?.username || 'A friend';
+  const invitationId = `INV_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+  // 5. Emit Realtime Socket.IO events to recipient
+  try {
+    socketEmitter.emitToUser(canonicalRecipientId, 'relationship:request_received', {
+      invitationId,
+      requesterId: canonicalSenderId,
+      senderUserId: canonicalSenderId,
+      requesterName: senderName,
+      senderUserName: senderName,
+      requesterAvatar: senderUser?.avatarUrl || '',
+      relationType: card.badge || card.name || 'FRIEND',
+      card: {
+        id: card.id,
+        name: card.name,
+        type: card.badge || card.name,
+        coinPrice: card.priceCoins,
+        icon: card.icon,
+      },
+      message: `Sent you a ${card.name} invitation!`,
+      timestamp: new Date().toISOString(),
+    });
+
+    socketEmitter.emitToUser(canonicalRecipientId, 'relationship:invitation_received', {
+      invitationId,
+      senderUserId: canonicalSenderId,
+      senderUserName: senderName,
+      targetUserId: canonicalRecipientId,
+      card: {
+        id: card.id,
+        name: card.name,
+        type: card.badge || card.name,
+        coinPrice: card.priceCoins,
+        icon: card.icon,
+      },
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+  } catch (socketErr) {
+    console.warn('[SocialService] Relationship invitation socket emit warning:', socketErr?.message);
+  }
+
+  // 6. Dispatch persistent in-app notification to recipient
+  try {
+    await notificationService.sendNotification({
+      recipientId: canonicalRecipientId,
+      title: 'Relationship Invitation',
+      body: `@${senderUser?.username || senderName} sent you a ${card.name} invitation!`,
+      type: 'SOCIAL',
+      category: 'Relationship',
+      data: {
+        invitationId,
+        senderUserId: canonicalSenderId,
+        senderName,
+        cardId: card.id,
+        cardName: card.name,
+        cardKey: card.key,
+        action: 'RELATIONSHIP_INVITATION',
+      },
+      sourceType: 'USER',
+      sourceId: canonicalSenderId,
+    }, db);
+  } catch (notifErr) {
+    console.warn('[SocialService] Relationship invitation notification warning:', notifErr?.message);
+  }
 
   return {
     success: true,
-    message: `Relationship card "${card.name}" sent to @${recipient?.username || recipientUserId}. Awaiting acceptance.`,
+    message: `Relationship card "${card.name}" sent to @${recipientUser?.username || canonicalRecipientId}. Awaiting acceptance.`,
     data: {
-      invitationId: `INV_${Date.now()}`,
-      senderUserId,
-      recipientUserId,
-      recipientUsername: recipient?.username,
-      recipientDisplayName: recipient?.profile?.displayName || recipient?.username,
+      invitationId,
+      senderUserId: canonicalSenderId,
+      recipientUserId: canonicalRecipientId,
+      recipientUsername: recipientUser?.username,
+      recipientDisplayName: recipientUser?.profile?.displayName || recipientUser?.username,
       card,
       priceDeducted: deductCoins ? card.priceCoins : 0,
       status: 'PENDING_ACCEPTANCE',
